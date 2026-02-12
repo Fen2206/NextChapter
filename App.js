@@ -6,11 +6,12 @@ import 'react-native-gesture-handler';
 
 // Import all of the screens
 import BookDetailsScreen from './screens/BookDetailsScreen';
-import BookSearchScreen from './screens/BookSearchScreen';
+//import BookSearchScreen from './screens/BookSearchScreen';
 import CommunityScreen from './screens/CommunityScreen';
 import HomeScreen from './screens/HomeScreen';
 import MyBooksScreen from './screens/MyBooksScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import BooksPage from './Fenoon/BooksPage';
 
 // Import theme
 import theme from './theme';
@@ -98,7 +99,7 @@ export default function App() {
 
         <Drawer.Screen 
           name="Search" 
-          component={BookSearchScreen}
+          component={BooksPage}
           options={{
             drawerLabel: 'Search Books',
             title: 'Search',

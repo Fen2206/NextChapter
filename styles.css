@@ -1,0 +1,126 @@
+.search-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+input {
+  font-size: 1rem;
+  padding: 0.5rem;
+}
+
+#status {
+  font-size: 0.9rem;
+  color: #444;
+  min-height: 1.2em;
+}
+
+/* keep horizontal carousel */
+.books {
+  display: flex;
+  gap: 18px;
+  padding: 14px 6px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+}
+
+/* make every card same height */
+.book-card {
+  width: 240px;
+  flex: 0 0 auto;
+  height: 480px;                 /* ✅ important */
+  display: flex;                  /* ✅ important */
+  flex-direction: column;         /* ✅ important */
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  scroll-snap-align: start;
+}
+
+.cover {
+  height: 260px;                  /* consistent cover height */
+  background: #e9e9e9;
+}
+
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cover-fallback {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #666;
+  font-weight: 600;
+}
+
+/* meta must flex so button can stick to bottom */
+.meta {
+  padding: 14px 14px 18px;
+  display: flex;                  /* ✅ important */
+  flex-direction: column;         /* ✅ important */
+  flex: 1;                         /* ✅ important */
+}
+
+/* clamp title so it doesn't push everything down */
+.title {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 10px;
+
+  display: -webkit-box;
+  -webkit-line-clamp: 2;          /* ✅ max 2 lines */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.author {
+  color: #666;
+  font-size: 16px;
+  margin-bottom: 10px;
+
+  display: -webkit-box;
+  -webkit-line-clamp: 1;          /* ✅ tidy */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: #444;
+  font-size: 16px;
+}
+
+.star {
+  color: #f5c400;
+  font-size: 18px;
+}
+
+/* push button to bottom */
+.btn {
+  margin-top: auto;               /* ✅ important */
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-weight: 700;
+  background: #4a4a4a;
+  color: white;
+  cursor: pointer;
+}
+
+.btn:hover {
+  filter: brightness(1.05);
+}
+.rating { 
+  min-height: 22px;
+ }
