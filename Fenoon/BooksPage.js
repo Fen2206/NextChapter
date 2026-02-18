@@ -11,12 +11,12 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import theme from "../theme"; 
+import theme from "../theme";
+import { supabase } from "../Fenoon/lsupabase";
 
 const { colors, typography, spacing } = theme;
 const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY;
 
-// Categories with their corresponding Google Books queries
 const CATEGORIES = [
   { key: "horror", label: "Horror", query: "subject:horror" },
   { key: "fiction", label: "Fiction", query: "subject:fiction" },
@@ -30,7 +30,6 @@ function normalizeCover(url) {
   if (!url) return "https://via.placeholder.com/140x210?text=No+Cover";
   return url.replace("http://", "https://");
 }
-
 
 function toBookCard(item) {
   const info = item.volumeInfo || {};
@@ -73,11 +72,16 @@ async function googleBooksSearch(query) {
   return (data?.items ?? []).map(toBookCard);
 }
 
-/**
- * SectionRow
- * - listKey: used to make keys unique across lists (e.g. "horror", "search")
- */
-function SectionRow({ title, books, loading, error, onSeeAll, onPressBook, listKey = "list" }) {
+function SectionRow({
+  title,
+  books,
+  loading,
+  error,
+  onSeeAll,
+  onPressBook,
+  onBeginReading,
+  listKey = "list",
+}) {
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -115,7 +119,6 @@ function SectionRow({ title, books, loading, error, onSeeAll, onPressBook, listK
                   {b.author}
                 </Text>
 
-                {/* Meta row: pages + rating / no-rating placeholder */}
                 <View style={styles.cardMetaRow}>
                   <Text style={styles.cardMeta} numberOfLines={1}>
                     {b.pages ? `${b.pages} pages` : "Pages N/A"}
@@ -136,10 +139,7 @@ function SectionRow({ title, books, loading, error, onSeeAll, onPressBook, listK
                   )}
                 </View>
 
-                <TouchableOpacity
-                  style={styles.beginBtn}
-                  onPress={() => Alert.alert("Begin Reading", `${b.title}\nby ${b.author}`)}
-                >
+                <TouchableOpacity style={styles.beginBtn} onPress={() => onBeginReading?.(b)}>
                   <Text style={styles.beginBtnText}>Begin Reading</Text>
                 </TouchableOpacity>
               </View>
@@ -152,20 +152,17 @@ function SectionRow({ title, books, loading, error, onSeeAll, onPressBook, listK
 }
 
 export default function BooksPage() {
-  // Search state
   const [query, setQuery] = useState("");
   const [searchBooks, setSearchBooks] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
 
-  // Category state
   const [categoryBooks, setCategoryBooks] = useState({});
   const [categoryLoading, setCategoryLoading] = useState(true);
   const [categoryErrors, setCategoryErrors] = useState({});
 
   const hasSearch = useMemo(() => query.trim().length > 0, [query]);
 
-  // Load categories in sequence 
   useEffect(() => {
     let mounted = true;
 
@@ -175,10 +172,8 @@ export default function BooksPage() {
         const booksMap = {};
         const errMap = {};
 
-        // sequential fetch with small delay 
         for (const cat of CATEGORIES) {
           try {
-            // small delay between requests
             await new Promise((r) => setTimeout(r, 200));
             const items = await googleBooksSearch(cat.query);
             booksMap[cat.key] = items;
@@ -203,7 +198,6 @@ export default function BooksPage() {
     };
   }, []);
 
-  // Search handler
   const onSearch = async () => {
     const q = query.trim();
     if (!q) return;
@@ -213,7 +207,6 @@ export default function BooksPage() {
       setSearchError("");
       setSearchBooks([]);
 
-      
       const items = await googleBooksSearch(`intitle:${q}`);
       setSearchBooks(items);
     } catch (e) {
@@ -224,8 +217,52 @@ export default function BooksPage() {
   };
 
   const onPressBook = (book) => {
-    // Replace with navigation when ready
     Alert.alert("Selected", `${book.title}\nby ${book.author}`);
+  };
+
+  const onBeginReading = async (b) => {
+    try {
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+
+      const user = authData?.user;
+      if (!user) {
+        Alert.alert("Not signed in", "Please sign in to save books.");
+        return;
+      }
+
+      const bookRow = {
+        google_volume_id: b.id,
+        title: b.title,
+        authors: b.author && b.author !== "Unknown author" ? [b.author] : null,
+        cover_url: b.cover,
+        page_count: b.pages || null,
+      };
+
+      const { data: bookData, error: bookErr } = await supabase
+        .from("books")
+        .upsert(bookRow, { onConflict: "google_volume_id" })
+        .select("id")
+        .single();
+
+      if (bookErr) throw bookErr;
+
+      const { error: linkErr } = await supabase
+        .from("saved_books")
+        .insert({ user_id: user.id, book_id: bookData.id });
+
+      if (linkErr) {
+        if (linkErr.code === "23505") {
+          Alert.alert("Already saved", `"${b.title}" is already in your profile.`);
+          return;
+        }
+        throw linkErr;
+      }
+
+      Alert.alert("Saved!", `"${b.title}" is now in your profile.`);
+    } catch (e) {
+      Alert.alert("Save failed", e?.message ?? "Unknown error");
+    }
   };
 
   return (
@@ -234,7 +271,6 @@ export default function BooksPage() {
         <Text style={styles.title}>Books</Text>
         <Text style={styles.subtitle}>Browse by category or search</Text>
 
-        {/* Search bar */}
         <View style={styles.searchRow}>
           <Ionicons name="search-outline" size={18} color={colors.secondary} />
           <TextInput
@@ -251,7 +287,6 @@ export default function BooksPage() {
           </TouchableOpacity>
         </View>
 
-        {/* Search results (only shown after user searches) */}
         {(searchLoading || searchError || searchBooks.length > 0) && (
           <SectionRow
             title="Search Results"
@@ -261,10 +296,10 @@ export default function BooksPage() {
             onSeeAll={() => {}}
             onPressBook={onPressBook}
             listKey="search"
+            onBeginReading={onBeginReading}
           />
         )}
 
-        {/* Categories */}
         {CATEGORIES.map((cat) => (
           <SectionRow
             key={cat.key}
@@ -275,6 +310,7 @@ export default function BooksPage() {
             onSeeAll={() => {}}
             onPressBook={onPressBook}
             listKey={cat.key}
+            onBeginReading={onBeginReading}
           />
         ))}
       </View>
@@ -351,7 +387,6 @@ const styles = StyleSheet.create({
 
   horizontalScroll: { paddingLeft: spacing.lg },
 
-  // card style 
   bookCard: {
     width: 170,
     marginRight: spacing.md,
@@ -366,14 +401,14 @@ const styles = StyleSheet.create({
   cardBody: {
     padding: spacing.md,
     flexDirection: "column",
-    height: 175, 
+    height: 175,
   },
   cardTitle: {
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
     color: colors.primary,
     lineHeight: 18,
-    minHeight: 36, 
+    minHeight: 36,
   },
   cardAuthor: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 4 },
 
