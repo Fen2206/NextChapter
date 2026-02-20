@@ -1,83 +1,82 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react'; // CHANGED: added useCallback
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native'; // ADDED
+import { supabase } from '../lib/supabase'; // ADDED
 import { colors, typography, spacing } from '../theme';
-
-// Sample Library data organized by peoples books status
-const LIBRARY_DATA = {
-  currentlyReading: [
-    {
-      id: 1,
-      title: 'The Housemaid',
-      author: 'Freida McFadden',
-      cover: 'https://covers.openlibrary.org/b/id/14653835-L.jpg',
-      progress: 50,
-      currentPage: 164,
-      totalPages: 329,
-      rating: 4.27,
-    },
-    {
-      id: 2,
-      title: 'IT',
-      author: 'Stephen King',
-      cover: 'https://covers.openlibrary.org/b/isbn/9780451149510-L.jpg',
-      progress: 61,
-      currentPage: 721,
-      totalPages: 1184,
-      rating: 4.24,
-    },
-  ],
-  wantToRead: [
-    {
-      id: 3,
-      title: 'The Hunger Games',
-      author: 'Suzanne Collins',
-      cover: 'https://covers.openlibrary.org/b/isbn/9780439023481-L.jpg',
-      rating: 4.32,
-      totalPages: 374,
-    },
-    {
-      id: 4,
-      title: 'The Great Gatsby',
-      author: 'F. Scott Fitzgerald',
-      cover: 'https://covers.openlibrary.org/b/isbn/9780140007466-L.jpg',
-      rating: 3.93,
-      totalPages: 180,
-    },
-  ],
-  completed: [
-    {
-      id: 5,
-      title: 'The Silent Patient',
-      author: 'Alex Michaelides',
-      cover: 'https://covers.openlibrary.org/b/isbn/9781250301697-L.jpg',
-      rating: 4.08,
-      completedDate: 'Jan 15, 2026',
-      totalPages: 336,
-    },
-    {
-      id: 6,
-      title: 'Where the Crawdads Sing',
-      author: 'Delia Owens',
-      cover: 'https://covers.openlibrary.org/b/isbn/9780735219090-L.jpg',
-      rating: 4.46,
-      completedDate: 'Jan 2, 2026',
-      totalPages: 384,
-    },
-    {
-      id: 7,
-      title: 'Educated',
-      author: 'Tara Westover',
-      cover: 'https://covers.openlibrary.org/b/isbn/9780399590504-L.jpg',
-      rating: 4.49,
-      completedDate: 'Dec 20, 2025',
-      totalPages: 334,
-    },
-  ],
-};
 
 export default function MyBooksScreen({ navigation }) {
   const [selectedTab, setSelectedTab] = useState('currentlyReading');
+
+  // Now LIBRARY_DATA - real state initialized as empty arrays
+  const [libraryData, setLibraryData] = useState({
+    currentlyReading: [],
+    wantToRead: [],
+    completed: [],
+  });
+
+  // fetch real books from DB when screen appears 
+  useFocusEffect(
+    useCallback(() => {
+      const fetchData = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Fetch all user_books joined with books table
+        const { data: userBooks } = await supabase
+          .from('user_books')
+          .select(`
+            id,
+            status,
+            current_page,
+            finished_at,
+            books (
+              id,
+              title,
+              authors,
+              cover_url,
+              page_count
+            )
+          `)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (userBooks) {
+          // Helper to format each userBook row
+          const formatBook = (ub) => {
+            const book = ub.books;
+            // authors  an array in DB, joint into a string
+            const authors = Array.isArray(book?.authors)
+              ? book.authors.join(', ')
+              : book?.authors || '';
+            const progress = book?.page_count && ub.current_page
+              ? Math.round((ub.current_page / book.page_count) * 100)
+              : 0;
+            return {
+              id: ub.id,
+              title: book?.title || '',
+              author: authors,
+              cover: book?.cover_url || '',   //cover_url is the DB column name
+              currentPage: ub.current_page || 0,
+              totalPages: book?.page_count || 0,
+              progress,
+              completedDate: ub.finished_at
+                ? new Date(ub.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : null,
+            };
+          };
+
+          // Split books by status into the three tabs
+          setLibraryData({
+            currentlyReading: userBooks.filter(b => b.status === 'reading').map(formatBook),
+            wantToRead: userBooks.filter(b => b.status === 'want_to_read').map(formatBook),
+            completed: userBooks.filter(b => b.status === 'completed').map(formatBook),
+          });
+        }
+      };
+      fetchData();
+    }, [])
+  );
 
   const handleBookPress = (book) => {
     navigation.navigate('BookDetails', { book });
@@ -87,7 +86,6 @@ export default function MyBooksScreen({ navigation }) {
     alert(`Continue reading: ${book.title}\n\nReading view coming soon!`);
   };
 
-  // Currently Reading Book Card
   const CurrentlyReadingCard = ({ book }) => (
     <TouchableOpacity 
       style={styles.currentCard}
@@ -129,7 +127,6 @@ export default function MyBooksScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  // Book Card. Want to Read / Completed
   const BookCard = ({ book, showDate }) => (
     <TouchableOpacity 
       style={styles.bookCard}
@@ -146,11 +143,6 @@ export default function MyBooksScreen({ navigation }) {
         <Text style={styles.bookTitle} numberOfLines={2}>{book.title}</Text>
         <Text style={styles.bookAuthor} numberOfLines={1}>{book.author}</Text>
         
-        <View style={styles.ratingContainer}>
-          <Ionicons name="star" size={14} color="#FFD700" />
-          <Text style={styles.ratingText}>{book.rating}</Text>
-        </View>
-        
         {showDate && book.completedDate && (
           <Text style={styles.completedDate}>
             Completed {book.completedDate}
@@ -164,8 +156,9 @@ export default function MyBooksScreen({ navigation }) {
     if (selectedTab === 'currentlyReading') {
       return (
         <View style={styles.content}>
-          {LIBRARY_DATA.currentlyReading.length > 0 ? (
-            LIBRARY_DATA.currentlyReading.map((book) => (
+          {/* was LIBRARY_DATA.currentlyReading, now libraryData */}
+          {libraryData.currentlyReading.length > 0 ? (
+            libraryData.currentlyReading.map((book) => (
               <CurrentlyReadingCard key={book.id} book={book} />
             ))
           ) : (
@@ -186,8 +179,9 @@ export default function MyBooksScreen({ navigation }) {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.gridContent}
         >
-          {LIBRARY_DATA.wantToRead.length > 0 ? (
-            LIBRARY_DATA.wantToRead.map((book) => (
+          {/* was LIBRARY_DATA.wantToRead, now libraryData */}
+          {libraryData.wantToRead.length > 0 ? (
+            libraryData.wantToRead.map((book) => (
               <BookCard key={book.id} book={book} />
             ))
           ) : (
@@ -208,8 +202,9 @@ export default function MyBooksScreen({ navigation }) {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.gridContent}
         >
-          {LIBRARY_DATA.completed.length > 0 ? (
-            LIBRARY_DATA.completed.map((book) => (
+          {/* was LIBRARY_DATA.completed, now libraryData */}
+          {libraryData.completed.length > 0 ? (
+            libraryData.completed.map((book) => (
               <BookCard key={book.id} book={book} showDate={true} />
             ))
           ) : (
@@ -226,18 +221,21 @@ export default function MyBooksScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header Stats */}
+      {/* Header Stats — use real counts from libraryData state */}
       <View style={styles.header}>
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{LIBRARY_DATA.currentlyReading.length}</Text>
+          {/* LIBRARY_DATA.currentlyReading.length */}
+          <Text style={styles.statNumber}>{libraryData.currentlyReading.length}</Text>
           <Text style={styles.statLabel}>Reading</Text>
         </View>
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{LIBRARY_DATA.wantToRead.length}</Text>
+          {/* LIBRARY_DATA.wantToRead.length */}
+          <Text style={styles.statNumber}>{libraryData.wantToRead.length}</Text>
           <Text style={styles.statLabel}>Want to Read</Text>
         </View>
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{LIBRARY_DATA.completed.length}</Text>
+          {/* LIBRARY_DATA.completed.length */}
+          <Text style={styles.statNumber}>{libraryData.completed.length}</Text>
           <Text style={styles.statLabel}>Completed</Text>
         </View>
       </View>
@@ -253,10 +251,7 @@ export default function MyBooksScreen({ navigation }) {
             size={20} 
             color={selectedTab === 'currentlyReading' ? colors.buttonPrimary : colors.secondary} 
           />
-          <Text style={[
-            styles.tabText, 
-            selectedTab === 'currentlyReading' && styles.tabTextActive
-          ]}>
+          <Text style={[styles.tabText, selectedTab === 'currentlyReading' && styles.tabTextActive]}>
             Reading
           </Text>
         </TouchableOpacity>
@@ -270,10 +265,7 @@ export default function MyBooksScreen({ navigation }) {
             size={20} 
             color={selectedTab === 'wantToRead' ? colors.buttonPrimary : colors.secondary} 
           />
-          <Text style={[
-            styles.tabText, 
-            selectedTab === 'wantToRead' && styles.tabTextActive
-          ]}>
+          <Text style={[styles.tabText, selectedTab === 'wantToRead' && styles.tabTextActive]}>
             Want to Read
           </Text>
         </TouchableOpacity>
@@ -287,10 +279,7 @@ export default function MyBooksScreen({ navigation }) {
             size={20} 
             color={selectedTab === 'completed' ? colors.buttonPrimary : colors.secondary} 
           />
-          <Text style={[
-            styles.tabText, 
-            selectedTab === 'completed' && styles.tabTextActive
-          ]}>
+          <Text style={[styles.tabText, selectedTab === 'completed' && styles.tabTextActive]}>
             Completed
           </Text>
         </TouchableOpacity>
@@ -304,7 +293,6 @@ export default function MyBooksScreen({ navigation }) {
   );
 }
 
-// Empty State Component
 const EmptyState = ({ icon, title, text }) => (
   <View style={styles.emptyState}>
     <Ionicons name={icon} size={64} color={colors.border} />
@@ -318,8 +306,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  
-  // Header Stats
   header: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
@@ -342,8 +328,6 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     marginTop: spacing.xs,
   },
-  
-  // Tabs
   tabs: {
     flexDirection: 'row',
     backgroundColor: colors.background,
@@ -372,8 +356,6 @@ const styles = StyleSheet.create({
     color: colors.buttonPrimary,
     fontWeight: typography.fontWeights.semibold,
   },
-  
-  // Content
   scrollContent: {
     flex: 1,
   },
@@ -384,8 +366,6 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
-  
-  // Currently Reading Card
   currentCard: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
@@ -457,8 +437,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.semibold,
     marginRight: spacing.xs,
   },
-  
-  // Book Card
   bookCard: {
     width: 140,
     marginRight: spacing.md,
@@ -483,24 +461,12 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     marginTop: 2,
   },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.xs,
-  },
-  ratingText: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
-    marginLeft: 4,
-  },
   completedDate: {
     fontSize: typography.fontSizes.xs,
     color: colors.secondary,
     marginTop: spacing.xs,
     fontStyle: 'italic',
   },
-  
-  // Empty State
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',

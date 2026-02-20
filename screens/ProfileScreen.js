@@ -1,54 +1,86 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react'; // added useCallback
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { supabase } from '../lib/supabase'; //added -- link to DB
 import { colors, typography, spacing } from '../theme';
 
-// Sample user data
-const USER_DATA = {
-  name: 'Nicole Flanders',
-  username: '@nicoleflanders',
-  email: 'nicole@nextchapter.com',
-  bio: 'Building NextChapter',
-  avatar: 'https://ui-avatars.com/api/?name=Nicole+Flanders&size=200&background=4A4A4A&color=fff',
-  joinDate: 'January 2026',
-  stats: {
+export default function ProfileScreen({ navigation }) {
+  // replaced useState(USER_DATA) with real state initialized as null/empty
+  const [user, setUser] = useState(null);
+  const [recentBooks, setRecentBooks] = useState([]);
+  const [stats, setStats] = useState({
     booksRead: 0,
     pagesRead: 0,
     currentStreak: 0,
     totalAnnotations: 0,
-  },
-};
+  });
 
-// Sample recent books
-const RECENT_BOOKS = [
-  {
-    id: 1,
-    title: 'The Housemaid',
-    author: 'Freida McFadden',
-    cover: 'https://covers.openlibrary.org/b/id/14653835-L.jpg',
-    status: 'reading',
-  },
-  {
-    id: 2,
-    title: 'IT',
-    author: 'Stephen King',
-    cover: 'https://covers.openlibrary.org/b/isbn/9780451149510-L.jpg',
-    status: 'completed',
-  },
-  {
-    id: 3,
-    title: 'The Hunger Games',
-    author: 'Suzanne Collins',
-    cover: 'https://covers.openlibrary.org/b/isbn/9780439023481-L.jpg',
-    status: 'want-to-read',
-  },
-];
+  // fetch real user data from Supabase when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const fetchData = async () => {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) return;
 
-export default function ProfileScreen({ navigation }) {
-  const [user, setUser] = useState(USER_DATA);
+        // Fetch profile from profiles table
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('username, display_name, avatar_url')
+          .eq('id', authUser.id)
+          .single();
 
+        // Build user object to match same shape the UI already expects
+        setUser({
+          name: profileData?.display_name || profileData?.username || 'Reader',
+          username: `@${profileData?.username || 'reader'}`,
+          email: authUser.email,
+          bio: profileData?.bio || '',
+          avatar: profileData?.avatar_url ||
+            `https://ui-avatars.com/api/?name=${encodeURIComponent(profileData?.display_name || profileData?.username || 'Reader')}&size=200&background=4A4A4A&color=fff`,
+          joinDate: new Date(authUser.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        });
+
+        // Fetch user_books joined with books for stats + recent activity
+        const { data: userBooks } = await supabase
+          .from('user_books')
+          .select(`
+            id,
+            status,
+            current_page,
+            books (
+              id,
+              title,
+              authors,
+              cover_url,
+              page_count
+            )
+          `)
+          .eq('user_id', authUser.id)
+          .order('created_at', { ascending: false });
+
+        if (userBooks) {
+          // Calculate stats from real data
+          const completed = userBooks.filter(b => b.status === 'completed');
+          const pagesRead = completed.reduce((sum, b) => sum + (b.books?.page_count || 0), 0);
+
+          setStats({
+            booksRead: completed.length,
+            pagesRead,
+            currentStreak: 0,       // pending until streak logic is built
+            totalAnnotations: 0,    // pending until annotations are wired up
+          });
+
+          // Show 3 most recent books in activity section
+          setRecentBooks(userBooks.slice(0, 3));
+        }
+      };
+      fetchData();
+    }, [])
+  );
+
+  //  handlers, StatCard, and JSX 
   const handleEditProfile = () => {
-    // For editing the profile screen
     alert('Edit Profile coming soon!\n\nYou\'ll be able to:\n• Update your photo\n• Edit your bio\n• Change preferences');
   };
 
@@ -69,15 +101,17 @@ export default function ProfileScreen({ navigation }) {
       {/* Profile Header */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
-          <Image source={{ uri: user.avatar }} style={styles.avatar} />
+          {/*user.avatar → user?.avatar (safe access since user starts as null) */}
+          <Image source={{ uri: user?.avatar }} style={styles.avatar} />
           <TouchableOpacity style={styles.editAvatarButton}>
             <Ionicons name="camera" size={16} color={colors.buttonText} />
           </TouchableOpacity>
         </View>
         
-        <Text style={styles.name}>{user.name}</Text>
-        <Text style={styles.username}>{user.username}</Text>
-        <Text style={styles.bio}>{user.bio}</Text>
+        {/*user.name → user?.name with fallback (safe access) */}
+        <Text style={styles.name}>{user?.name || 'Reader'}</Text>
+        <Text style={styles.username}>{user?.username || '@reader'}</Text>
+        <Text style={styles.bio}>{user?.bio || ''}</Text>
         
         <View style={styles.actionButtons}>
           <TouchableOpacity style={styles.primaryButton} onPress={handleEditProfile}>
@@ -91,38 +125,38 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Reading Stats */}
+      {/* use real stats state */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Reading Stats</Text>
         <View style={styles.statsGrid}>
           <StatCard 
             icon="book" 
             label="Books Read" 
-            value={user.stats.booksRead}
+            value={stats.booksRead} // change was user.stats.booksRead
             color={colors.buttonPrimary}
           />
           <StatCard 
             icon="document-text" 
             label="Pages Read" 
-            value={user.stats.pagesRead.toLocaleString()}
+            value={stats.pagesRead.toLocaleString()} // change - user.stats.pagesRead
             color={colors.buttonPrimary}
           />
           <StatCard 
             icon="flame" 
             label="Day Streak" 
-            value={user.stats.currentStreak}
+            value={stats.currentStreak} // change - user.stats.currentStreak
             color="#FF6B35"
           />
           <StatCard 
             icon="bookmark" 
             label="Annotations" 
-            value={user.stats.totalAnnotations}
+            value={stats.totalAnnotations} // change - user.stats.totalAnnotations
             color={colors.buttonPrimary}
           />
         </View>
       </View>
 
-      {/* Recent Activity */}
+      {/* Recent Activity — maps over real recentBooks from Supabase */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
@@ -131,34 +165,49 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
         </View>
         
-        {RECENT_BOOKS.map((book) => (
-          <View key={book.id} style={styles.activityItem}>
-            <Image source={{ uri: book.cover }} style={styles.activityCover} />
-            <View style={styles.activityInfo}>
-              <Text style={styles.activityTitle} numberOfLines={1}>{book.title}</Text>
-              <Text style={styles.activityAuthor}>{book.author}</Text>
-              <View style={styles.statusBadge}>
-                <View style={[
-                  styles.statusDot, 
-                  { backgroundColor: 
-                    book.status === 'reading' ? '#4CAF50' : 
-                    book.status === 'completed' ? '#2196F3' : 
-                    '#FF9800' 
-                  }
-                ]} />
-                <Text style={styles.statusText}>
-                  {book.status === 'reading' ? 'Currently Reading' : 
-                   book.status === 'completed' ? 'Completed' : 
-                   'Want to Read'}
-                </Text>
+        {/* change - uses real recentBooks state */}
+        {recentBooks.length === 0 ? (
+          <Text style={{ color: colors.secondary, fontSize: typography.fontSizes.sm }}>
+            No recent activity yet.
+          </Text>
+        ) : (
+          recentBooks.map((userBook) => {
+            const book = userBook.books;
+            const authors = Array.isArray(book?.authors)
+              ? book.authors.join(', ')
+              : book?.authors || '';
+            return (
+              <View key={userBook.id} style={styles.activityItem}>
+                {/* change - book.cover → book?.cover_url (new column name from DB) */}
+                <Image source={{ uri: book?.cover_url }} style={styles.activityCover} />
+                <View style={styles.activityInfo}>
+                  <Text style={styles.activityTitle} numberOfLines={1}>{book?.title}</Text>
+                  {/* change - book.author → authors (handles array from DB) */}
+                  <Text style={styles.activityAuthor}>{authors}</Text>
+                  <View style={styles.statusBadge}>
+                    <View style={[
+                      styles.statusDot,
+                      { backgroundColor:
+                        userBook.status === 'reading' ? '#4CAF50' :
+                        userBook.status === 'completed' ? '#2196F3' :
+                        '#FF9800'
+                      }
+                    ]} />
+                    <Text style={styles.statusText}>
+                      {userBook.status === 'reading' ? 'Currently Reading' :
+                       userBook.status === 'completed' ? 'Completed' :
+                       'Want to Read'}
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.secondary} />
               </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.secondary} />
-          </View>
-        ))}
+            );
+          })
+        )}
       </View>
 
-      {/* Your Annotations */}
+      {/* Annotations keeping until annotations feature is built */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Your Annotations</Text>
@@ -194,7 +243,7 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Account Info */}
+      {/* Account Info — real user?.email and user?.joinDate */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account Information</Text>
         
@@ -202,7 +251,7 @@ export default function ProfileScreen({ navigation }) {
           <Ionicons name="mail-outline" size={20} color={colors.secondary} />
           <View style={styles.infoText}>
             <Text style={styles.infoLabel}>Email</Text>
-            <Text style={styles.infoValue}>{user.email}</Text>
+            <Text style={styles.infoValue}>{user?.email || ''}</Text>
           </View>
         </View>
 
@@ -210,12 +259,11 @@ export default function ProfileScreen({ navigation }) {
           <Ionicons name="calendar-outline" size={20} color={colors.secondary} />
           <View style={styles.infoText}>
             <Text style={styles.infoLabel}>Member Since</Text>
-            <Text style={styles.infoValue}>{user.joinDate}</Text>
+            <Text style={styles.infoValue}>{user?.joinDate || ''}</Text>
           </View>
         </View>
       </View>
 
-      {/* Bottom padding */}
       <View style={{ height: spacing.xxl }} />
     </ScrollView>
   );
@@ -226,8 +274,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  
-  // Header Section
   header: {
     alignItems: 'center',
     padding: spacing.lg,
@@ -304,8 +350,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  
-  // Stats Section
   section: {
     padding: spacing.lg,
     borderBottomWidth: 1,
@@ -351,8 +395,6 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     marginTop: spacing.xs,
   },
-  
-  // Activity Section
   activityItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -394,8 +436,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.xs,
     color: colors.secondary,
   },
-  
-  // Annotations Section
   annotationPreview: {
     backgroundColor: colors.surface,
     padding: spacing.md,
@@ -429,8 +469,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
   },
-  
-  // Account Info Section
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
