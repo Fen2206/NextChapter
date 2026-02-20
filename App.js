@@ -12,6 +12,7 @@ import HomeScreen from './screens/HomeScreen';
 import MyBooksScreen from './screens/MyBooksScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import BooksPage from './Fenoon/BooksPage';
+//import ReaderScreen from "./Fenoon/readerScreen";
 import LoginScreen from './screens/LoginScreen'; // add login screen
 
 // Import theme

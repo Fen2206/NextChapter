@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { colors, spacing, typography } from '../theme';
 
+
+
 // Sample search results
 const SAMPLE_SEARCH_RESULTS = [
   {

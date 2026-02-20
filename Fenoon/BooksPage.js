@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+
 import {
   View,
   Text,
@@ -9,7 +10,10 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  Modal,
 } from "react-native";
+
+import { WebView } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import theme from "../theme";
 import { supabase } from "../Fenoon/lsupabase";
@@ -32,7 +36,12 @@ function normalizeCover(url) {
 }
 
 function toBookCard(item) {
+  //preview
+ // const previewLink = info.previewLink || null;
+  //const webReaderLink = item.accessInfo?.webReaderLink || null;
   const info = item.volumeInfo || {};
+  const access = item.accessInfo || {};
+
   const title = info.title || "Untitled";
   const author =
     Array.isArray(info.authors) && info.authors.length > 0 ? info.authors[0] : "Unknown author";
@@ -49,6 +58,10 @@ function toBookCard(item) {
     pages,
     rating,
     ratingsCount,
+
+    previewLink: info.previewLink ?? null,
+    webReaderLink: access.webReaderLink ?? null,
+    //viewability: access.viewability ?? null,
   };
 }
 
@@ -82,13 +95,17 @@ function SectionRow({
   onBeginReading,
   listKey = "list",
 }) {
-  return (
+  //return (
+    return (
+      
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{title}</Text>
 
         <TouchableOpacity onPress={onSeeAll} disabled={!books?.length}>
-          <Text style={[styles.seeAllText, !books?.length && { opacity: 0.4 }]}>See All</Text>
+          <Text style={[styles.seeAllText, !books?.length && { opacity: 0.4 }]}>
+            See All
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -100,12 +117,16 @@ function SectionRow({
       ) : error ? (
         <Text style={styles.errorText}>{error}</Text>
       ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.horizontalScroll}
+        >
           {books.map((b, idx) => (
             <TouchableOpacity
               key={`${listKey}-${b.id}-${idx}`}
               style={styles.bookCard}
-              onPress={() => onPressBook?.(b)}
+              onPress={() => onPressBook?.(b)}   
               activeOpacity={0.85}
             >
               <Image source={{ uri: b.cover }} style={styles.bookCover} />
@@ -139,7 +160,10 @@ function SectionRow({
                   )}
                 </View>
 
-                <TouchableOpacity style={styles.beginBtn} onPress={() => onBeginReading?.(b)}>
+                <TouchableOpacity
+                  style={styles.beginBtn}
+                  onPress={() => onBeginReading?.(b)}
+                >
                   <Text style={styles.beginBtnText}>Begin Reading</Text>
                 </TouchableOpacity>
               </View>
@@ -150,8 +174,24 @@ function SectionRow({
     </View>
   );
 }
+   
+   
+const testSupabaseWrite = async () => {
+  const { data: authData } = await supabase.auth.getUser();
+  const user = authData?.user;
+  if (!user) return Alert.alert("No user");
+
+  const { error } = await supabase.from("books").insert({
+    google_volume_id: "TEST-" + Date.now(),
+    title: "Test Book",
+  });
+
+  Alert.alert(error ? "DB failed" : "DB ok", error?.message ?? "Inserted");
+};
 
 export default function BooksPage() {
+  const [previewUrl, setPreviewUrl] = useState(null);
+  //console.log("GOOGLE BOOKS KEY?", process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY);
   const [query, setQuery] = useState("");
   const [searchBooks, setSearchBooks] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -216,9 +256,21 @@ export default function BooksPage() {
     }
   };
 
-  const onPressBook = (book) => {
-    Alert.alert("Selected", `${book.title}\nby ${book.author}`);
-  };
+
+  const onPressBook = async (book) => {
+    //Alert.alert("Selected", `${book.title}\nby ${book.author}`);
+  const url = book.webReaderLink || book.previewLink;
+
+  if (!url) {
+    Alert.alert("No preview available");
+    return;
+  }
+
+  setPreviewUrl(url);
+};
+
+    
+  
 
   const onBeginReading = async (b) => {
     try {
@@ -264,59 +316,93 @@ export default function BooksPage() {
       Alert.alert("Save failed", e?.message ?? "Unknown error");
     }
   };
-
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Books</Text>
-        <Text style={styles.subtitle}>Browse by category or search</Text>
+    <>
+      <ScrollView style={styles.container}>
+        <View style={styles.content}>
+          <Text style={styles.title}>Books</Text>
+          <Text style={styles.subtitle}>Browse by category or search</Text>
 
-        <View style={styles.searchRow}>
-          <Ionicons name="search-outline" size={18} color={colors.secondary} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search books (title, author, ISBN)…"
-            placeholderTextColor={colors.secondary}
-            style={styles.searchInput}
-            returnKeyType="search"
-            onSubmitEditing={onSearch}
-          />
-          <TouchableOpacity style={styles.searchBtn} onPress={onSearch} disabled={!hasSearch}>
-            <Text style={[styles.searchBtnText, !hasSearch && { opacity: 0.4 }]}>Go</Text>
-          </TouchableOpacity>
+          <View style={styles.searchRow}>
+            <Ionicons name="search-outline" size={18} color={colors.secondary} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search books (title, author, ISBN)…"
+              placeholderTextColor={colors.secondary}
+              style={styles.searchInput}
+              returnKeyType="search"
+              onSubmitEditing={onSearch}
+            />
+            <TouchableOpacity style={styles.searchBtn} onPress={onSearch} disabled={!hasSearch}>
+              <Text style={[styles.searchBtnText, !hasSearch && { opacity: 0.4 }]}>Go</Text>
+            </TouchableOpacity>
+          </View>
+
+          {(searchLoading || searchError || searchBooks.length > 0) && (
+            <SectionRow
+              title="Search Results"
+              books={searchBooks}
+              loading={searchLoading}
+              error={searchError}
+              onSeeAll={() => {}}
+              onPressBook={onPressBook}
+              listKey="search"
+              onBeginReading={onBeginReading}
+            />
+          )}
+
+          {CATEGORIES.map((cat) => (
+            <SectionRow
+              key={cat.key}
+              title={cat.label}
+              books={categoryBooks[cat.key] || []}
+              loading={categoryLoading}
+              error={categoryErrors[cat.key] || ""}
+              onSeeAll={() => {}}
+              onPressBook={onPressBook}
+              listKey={cat.key}
+              onBeginReading={onBeginReading}
+            />
+          ))}
         </View>
+      </ScrollView>
 
-        {(searchLoading || searchError || searchBooks.length > 0) && (
-          <SectionRow
-            title="Search Results"
-            books={searchBooks}
-            loading={searchLoading}
-            error={searchError}
-            onSeeAll={() => {}}
-            onPressBook={onPressBook}
-            listKey="search"
-            onBeginReading={onBeginReading}
-          />
-        )}
+      <Modal
+  visible={!!previewUrl}
+  animationType="slide"
+  onRequestClose={() => setPreviewUrl(null)}
+>
+  <View style={{ flex: 1, backgroundColor: "black" }}>
+    
+    {/* WebView FIRST */}
+    {previewUrl ? (
+      <WebView source={{ uri: previewUrl }} style={{ flex: 1 }} />
+    ) : null}
 
-        {CATEGORIES.map((cat) => (
-          <SectionRow
-            key={cat.key}
-            title={cat.label}
-            books={categoryBooks[cat.key] || []}
-            loading={categoryLoading}
-            error={categoryErrors[cat.key] || ""}
-            onSeeAll={() => {}}
-            onPressBook={onPressBook}
-            listKey={cat.key}
-            onBeginReading={onBeginReading}
-          />
-        ))}
-      </View>
-    </ScrollView>
+    {/* Close Button OVERLAY */}
+    <TouchableOpacity
+      onPress={() => setPreviewUrl(null)}
+      style={{
+        position: "absolute",
+        top: 50,
+        right: 20,
+        backgroundColor: "rgba(0,0,0,0.7)",
+        paddingHorizontal: 15,
+        paddingVertical: 10,
+        borderRadius: 20,
+      }}
+    >
+      <Text style={{ color: "white", fontWeight: "bold" }}>
+        ✕ Close
+      </Text>
+    </TouchableOpacity>
+
+  </View>
+</Modal>
+    </>
   );
-}
+} 
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },

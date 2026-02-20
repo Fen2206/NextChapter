@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, typography, spacing } from '../theme';
+import React, { useEffect, useState, useCallback } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { colors, typography, spacing } from "../theme";
+import { useFocusEffect } from "@react-navigation/native";
+import { supabase } from "../Fenoon/lsupabase";
 
 // Sample user data
 const USER_DATA = {
@@ -45,7 +47,46 @@ const RECENT_BOOKS = [
 ];
 
 export default function ProfileScreen({ navigation }) {
+  //me 
+  const [savedBooks, setSavedBooks] = useState([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+
+  //me
   const [user, setUser] = useState(USER_DATA);
+
+  const fetchSavedBooks = useCallback(async () => {
+    try {
+      setLoadingSaved(true);
+
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
+      if (!user) {
+        setSavedBooks([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("saved_books")
+        .select(`created_at, books:book_id (id, title, cover_url, page_count)`)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+
+      setSavedBooks((data ?? []).map((r) => r.books).filter(Boolean));
+    } catch (e) {
+      console.log("Profile fetch error:", e.message);
+    } finally {
+      setLoadingSaved(false);
+    }
+  }, []);
+    useFocusEffect(
+    useCallback(() => {
+      fetchSavedBooks();
+    }, [fetchSavedBooks])
+  );
+
 
   const handleEditProfile = () => {
     // For editing the profile screen
@@ -130,7 +171,28 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.seeAllText}>View All</Text>
           </TouchableOpacity>
         </View>
-        
+      {loadingSaved ? (
+  <Text style={styles.username}>Loading…</Text>
+) : savedBooks.length === 0 ? (
+  <Text style={styles.username}>No saved books yet.</Text>
+) : (
+  savedBooks.map((book) => (
+    <View key={book.id} style={styles.activityItem}>
+      <Image source={{ uri: book.cover_url }} style={styles.activityCover} />
+      <View style={styles.activityInfo}>
+        <Text style={styles.activityTitle} numberOfLines={1}>
+          {book.title}
+        </Text>
+        <Text style={styles.activityAuthor}>
+          {book.page_count ? `${book.page_count} pages` : "Pages N/A"}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.secondary} />
+    </View>
+  ))
+)}
+
+       {/* 
         {RECENT_BOOKS.map((book) => (
           <View key={book.id} style={styles.activityItem}>
             <Image source={{ uri: book.cover }} style={styles.activityCover} />
@@ -145,7 +207,8 @@ export default function ProfileScreen({ navigation }) {
                     book.status === 'completed' ? '#2196F3' : 
                     '#FF9800' 
                   }
-                ]} />
+                ]} >/
+              
                 <Text style={styles.statusText}>
                   {book.status === 'reading' ? 'Currently Reading' : 
                    book.status === 'completed' ? 'Completed' : 
@@ -155,7 +218,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.secondary} />
           </View>
-        ))}
+        ))*/}
       </View>
 
       {/* Your Annotations */}
