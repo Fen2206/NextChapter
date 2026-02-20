@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { supabase } from '../lib/supabase';
 import { colors, typography, spacing } from '../theme';
+
 // Sample book data, later we'll replace this with Google Books API
 const SAMPLE_BOOKS = [
   {
@@ -42,25 +45,48 @@ const SAMPLE_BOOKS = [
   },
 ];
 
-const CURRENTLY_READING = [
-  {
-    id: 4,
-    title: 'The Housemaid',
-    author: 'Freida McFadden',
-    rating: 4.27,
-    cover: 'https://covers.openlibrary.org/b/id/14653835-L.jpg',
-    currentPage: 164,
-    totalPages: 329,
-    progress: 50,
-    description: 'Every day I clean the Winchesters\' beautiful house top to bottom. I try to ignore how Nina Winchester looks at me down her nose. But as I look at this picture-perfect family, I can\'t help but wonder: what secrets are they hiding?',
-    genres: ['Thriller', 'Mystery', 'Psychological'],
-    isbn: '9781538742570',
-  },
-];
-
 export default function HomeScreen({ navigation }) {
+  const [profile, setProfile] = useState(null);
+  const [currentlyReading, setCurrentlyReading] = useState([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const fetchData = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Fetch user's profile for personalized greeting
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('username, display_name')
+          .eq('id', user.id)
+          .single();
+        setProfile(profileData);
+
+        // Fetch currently reading books
+        const { data: readingData } = await supabase
+          .from('user_books')
+          .select(`
+            id,
+            current_page,
+            status,
+            books (
+              id,
+              title,
+              authors,
+              cover_url,
+              page_count
+            )
+          `)
+          .eq('user_id', user.id)
+          .eq('status', 'reading');
+        setCurrentlyReading(readingData || []);
+      };
+      fetchData();
+    }, [])
+  );
+
   const handleBookPress = (book) => {
-    // Navigate to book details
     navigation.navigate('BookDetails', { book });
   };
 
@@ -73,55 +99,67 @@ export default function HomeScreen({ navigation }) {
     <ScrollView style={styles.container}>
       <View style={styles.content}>
         {/* Welcome Section */}
-        <Text style={styles.title}>Welcome to NextChapter</Text>
+        <Text style={styles.title}>
+          Welcome, {profile?.display_name || profile?.username || 'Reader'}
+        </Text>
         <Text style={styles.subtitle}>
           Discover your next great read
         </Text>
 
         {/* Continue Reading Section */}
-        {CURRENTLY_READING.length > 0 && (
+        {currentlyReading.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Continue Reading</Text>
-            {CURRENTLY_READING.map((book) => (
-              <TouchableOpacity
-                key={book.id}
-                style={styles.currentlyReadingCard}
-                onPress={() => handleBookPress(book)}
-                activeOpacity={0.7}
-              >
-                <Image 
-                  source={{ uri: book.cover }} 
-                  style={styles.currentlyReadingCover}
-                  resizeMode="cover"
-                />
-                <View style={styles.currentlyReadingInfo}>
-                  <Text style={styles.bookTitle} numberOfLines={2}>
-                    {book.title}
-                  </Text>
-                  <Text style={styles.bookAuthor}>{book.author}</Text>
-                  
-                  {/* Progress Bar */}
-                  <View style={styles.progressContainer}>
-                    <View style={styles.progressBar}>
-                      <View style={[styles.progressFill, { width: `${book.progress}%` }]} />
+            {currentlyReading.map((userBook) => {
+              const book = userBook.books;
+              const progress = book?.page_count
+                ? Math.round((userBook.current_page / book.page_count) * 100)
+                : 0;
+              const authors = Array.isArray(book?.authors)
+                ? book.authors.join(', ')
+                : book?.authors || '';
+
+              return (
+                <TouchableOpacity
+                  key={userBook.id}
+                  style={styles.currentlyReadingCard}
+                  onPress={() => handleBookPress(book)}
+                  activeOpacity={0.7}
+                >
+                  <Image
+                    source={{ uri: book?.cover_url }}
+                    style={styles.currentlyReadingCover}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.currentlyReadingInfo}>
+                    <Text style={styles.bookTitle} numberOfLines={2}>
+                      {book?.title}
+                    </Text>
+                    <Text style={styles.bookAuthor}>{authors}</Text>
+
+                    {/* Progress Bar */}
+                    <View style={styles.progressContainer}>
+                      <View style={styles.progressBar}>
+                        <View style={[styles.progressFill, { width: `${progress}%` }]} />
+                      </View>
+                      <Text style={styles.progressText}>{progress}%</Text>
                     </View>
-                    <Text style={styles.progressText}>{book.progress}%</Text>
+
+                    <Text style={styles.pageCount}>
+                      Page {userBook.current_page} of {book?.page_count}
+                    </Text>
+
+                    <TouchableOpacity
+                      style={styles.continueButton}
+                      onPress={() => handleBeginReading(book)}
+                    >
+                      <Text style={styles.continueButtonText}>Continue Reading</Text>
+                      <Ionicons name="arrow-forward" size={16} color={colors.buttonText} />
+                    </TouchableOpacity>
                   </View>
-                  
-                  <Text style={styles.pageCount}>
-                    Page {book.currentPage} of {book.totalPages}
-                  </Text>
-                  
-                  <TouchableOpacity 
-                    style={styles.continueButton}
-                    onPress={() => handleBeginReading(book)}
-                  >
-                    <Text style={styles.continueButtonText}>Continue Reading</Text>
-                    <Ionicons name="arrow-forward" size={16} color={colors.buttonText} />
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
@@ -133,14 +171,14 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
-          
-          <ScrollView 
-            horizontal 
+
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.horizontalScroll}
           >
             {SAMPLE_BOOKS.map((book) => (
-              <BookCard 
+              <BookCard
                 key={book.id}
                 book={book}
                 onPress={() => handleBookPress(book)}
@@ -158,14 +196,14 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
-          
-          <ScrollView 
-            horizontal 
+
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.horizontalScroll}
           >
             {SAMPLE_BOOKS.slice().reverse().map((book) => (
-              <BookCard 
+              <BookCard
                 key={book.id}
                 book={book}
                 onPress={() => handleBookPress(book)}
@@ -179,29 +217,29 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-// Book Card Component
+// Book Card Component — unchanged
 function BookCard({ book, onPress, onBeginReading }) {
   return (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={styles.bookCard}
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <Image 
-        source={{ uri: book.cover }} 
+      <Image
+        source={{ uri: book.cover }}
         style={styles.bookCover}
         resizeMode="cover"
       />
       <Text style={styles.cardTitle} numberOfLines={2}>{book.title}</Text>
       <Text style={styles.cardAuthor} numberOfLines={1}>{book.author}</Text>
-      
+
       {/* Star Rating */}
       <View style={styles.ratingContainer}>
         <Ionicons name="star" size={14} color="#FFD700" />
         <Text style={styles.ratingText}>{book.rating}</Text>
       </View>
-      
-      <TouchableOpacity 
+
+      <TouchableOpacity
         style={styles.beginButton}
         onPress={(e) => {
           e.stopPropagation();
@@ -257,7 +295,7 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     fontWeight: typography.fontWeights.medium,
   },
-  
+
   // Currently Reading Card
   currentlyReadingCard: {
     flexDirection: 'row',
@@ -331,7 +369,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.semibold,
     marginRight: spacing.xs,
   },
-  
+
   // Book Card Styles
   horizontalScroll: {
     paddingLeft: spacing.lg,
