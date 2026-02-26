@@ -1,19 +1,11 @@
- HEAD
-import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, typography, spacing } from "../theme";
-import { useFocusEffect } from "@react-navigation/native";
-import { supabase } from "../Fenoon/lsupabase";
-import React, { useState, useCallback } from 'react'; // added useCallback
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { supabase } from '../lib/supabase'; //added -- link to DB
+import { supabase } from '../lib/supabase';
 import { colors, typography, spacing } from '../theme';
 
 export default function ProfileScreen({ navigation }) {
-  // replaced useState(USER_DATA) with real state initialized as null/empty
   const [user, setUser] = useState(null);
   const [recentBooks, setRecentBooks] = useState([]);
   const [stats, setStats] = useState({
@@ -23,76 +15,61 @@ export default function ProfileScreen({ navigation }) {
     totalAnnotations: 0,
   });
 
-  // fetch real user data from Supabase when screen comes into focus
+  // keep saved books state
+  const [savedBooks, setSavedBooks] = useState([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+
+  // keep saved books fetch
+  const fetchSavedBooks = useCallback(async () => {
+    try {
+      setLoadingSaved(true);
+      const { data: authData } = await supabase.auth.getUser();
+      const currentUser = authData?.user;
+      if (!currentUser) { setSavedBooks([]); return; }
+
+      const { data, error } = await supabase
+        .from('saved_books')
+        .select(`created_at, books:book_id (id, title, cover_url, page_count)`)
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      setSavedBooks((data ?? []).map((r) => r.books).filter(Boolean));
+    } catch (e) {
+      console.log('Profile fetch error:', e.message);
+    } finally {
+      setLoadingSaved(false);
+    }
+  }, []);
+
+  // Main profile + stats fetch, also triggers savedBooks refresh
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser) return;
 
-<<<<<<< HEAD
-export default function ProfileScreen({ navigation }) {
-  //me 
-  const [savedBooks, setSavedBooks] = useState([]);
-  const [loadingSaved, setLoadingSaved] = useState(false);
-
-  //me
-  const [user, setUser] = useState(USER_DATA);
-
-  const fetchSavedBooks = useCallback(async () => {
-    try {
-      setLoadingSaved(true);
-
-      const { data: authData } = await supabase.auth.getUser();
-      const user = authData?.user;
-      if (!user) {
-        setSavedBooks([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("saved_books")
-        .select(`created_at, books:book_id (id, title, cover_url, page_count)`)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (error) throw error;
-
-      setSavedBooks((data ?? []).map((r) => r.books).filter(Boolean));
-    } catch (e) {
-      console.log("Profile fetch error:", e.message);
-    } finally {
-      setLoadingSaved(false);
-    }
-  }, []);
-    useFocusEffect(
-    useCallback(() => {
-      fetchSavedBooks();
-    }, [fetchSavedBooks])
-  );
-
-
-=======
-        // Fetch profile from profiles table
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('username, display_name, avatar_url')
+          .select('username, display_name, avatar_url, bio')
           .eq('id', authUser.id)
           .single();
 
-        // Build user object to match same shape the UI already expects
         setUser({
           name: profileData?.display_name || profileData?.username || 'Reader',
           username: `@${profileData?.username || 'reader'}`,
           email: authUser.email,
           bio: profileData?.bio || '',
           avatar: profileData?.avatar_url ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(profileData?.display_name || profileData?.username || 'Reader')}&size=200&background=4A4A4A&color=fff`,
-          joinDate: new Date(authUser.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+            `https://ui-avatars.com/api/?name=${encodeURIComponent(
+              profileData?.display_name || profileData?.username || 'Reader'
+            )}&size=200&background=4A4A4A&color=fff`,
+          joinDate: new Date(authUser.created_at).toLocaleDateString('en-US', {
+            month: 'long', year: 'numeric',
+          }),
         });
 
-        // Fetch user_books joined with books for stats + recent activity
         const { data: userBooks } = await supabase
           .from('user_books')
           .select(`
@@ -111,29 +88,26 @@ export default function ProfileScreen({ navigation }) {
           .order('created_at', { ascending: false });
 
         if (userBooks) {
-          // Calculate stats from real data
           const completed = userBooks.filter(b => b.status === 'completed');
           const pagesRead = completed.reduce((sum, b) => sum + (b.books?.page_count || 0), 0);
-
           setStats({
             booksRead: completed.length,
             pagesRead,
             currentStreak: 0,       // pending until streak logic is built
             totalAnnotations: 0,    // pending until annotations are wired up
           });
-
-          // Show 3 most recent books in activity section
           setRecentBooks(userBooks.slice(0, 3));
         }
+
+        // Refresh saved books at the same time
+        fetchSavedBooks();
       };
       fetchData();
-    }, [])
+    }, [fetchSavedBooks])
   );
 
-  //  handlers, StatCard, and JSX 
->>>>>>> d0b3e8376ad6698f72b51f2a2311687722984b1d
   const handleEditProfile = () => {
-    alert('Edit Profile coming soon!\n\nYou\'ll be able to:\n• Update your photo\n• Edit your bio\n• Change preferences');
+    navigation.navigate('EditProfile');
   };
 
   const handleSettings = () => {
@@ -153,62 +127,40 @@ export default function ProfileScreen({ navigation }) {
       {/* Profile Header */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
-          {/*user.avatar → user?.avatar (safe access since user starts as null) */}
           <Image source={{ uri: user?.avatar }} style={styles.avatar} />
-          <TouchableOpacity style={styles.editAvatarButton}>
+          <TouchableOpacity style={styles.editAvatarButton} onPress={handleEditProfile}>
             <Ionicons name="camera" size={16} color={colors.buttonText} />
           </TouchableOpacity>
         </View>
-        
-        {/*user.name → user?.name with fallback (safe access) */}
+
         <Text style={styles.name}>{user?.name || 'Reader'}</Text>
         <Text style={styles.username}>{user?.username || '@reader'}</Text>
         <Text style={styles.bio}>{user?.bio || ''}</Text>
-        
+
         <View style={styles.actionButtons}>
           <TouchableOpacity style={styles.primaryButton} onPress={handleEditProfile}>
             <Ionicons name="create-outline" size={18} color={colors.buttonText} />
             <Text style={styles.primaryButtonText}>Edit Profile</Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.secondaryButton} onPress={handleSettings}>
             <Ionicons name="settings-outline" size={18} color={colors.primary} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* use real stats state */}
+      {/* Reading Stats */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Reading Stats</Text>
         <View style={styles.statsGrid}>
-          <StatCard 
-            icon="book" 
-            label="Books Read" 
-            value={stats.booksRead} // change was user.stats.booksRead
-            color={colors.buttonPrimary}
-          />
-          <StatCard 
-            icon="document-text" 
-            label="Pages Read" 
-            value={stats.pagesRead.toLocaleString()} // change - user.stats.pagesRead
-            color={colors.buttonPrimary}
-          />
-          <StatCard 
-            icon="flame" 
-            label="Day Streak" 
-            value={stats.currentStreak} // change - user.stats.currentStreak
-            color="#FF6B35"
-          />
-          <StatCard 
-            icon="bookmark" 
-            label="Annotations" 
-            value={stats.totalAnnotations} // change - user.stats.totalAnnotations
-            color={colors.buttonPrimary}
-          />
+          <StatCard icon="book" label="Books Read" value={stats.booksRead} color={colors.buttonPrimary} />
+          <StatCard icon="document-text" label="Pages Read" value={stats.pagesRead.toLocaleString()} color={colors.buttonPrimary} />
+          <StatCard icon="flame" label="Day Streak" value={stats.currentStreak} color="#FF6B35" />
+          <StatCard icon="bookmark" label="Annotations" value={stats.totalAnnotations} color={colors.buttonPrimary} />
         </View>
       </View>
 
-      {/* Recent Activity — maps over real recentBooks from Supabase */}
+      {/* Recent Activity — from user_books (your version) */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
@@ -216,58 +168,7 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.seeAllText}>View All</Text>
           </TouchableOpacity>
         </View>
-<<<<<<< HEAD
-      {loadingSaved ? (
-  <Text style={styles.username}>Loading…</Text>
-) : savedBooks.length === 0 ? (
-  <Text style={styles.username}>No saved books yet.</Text>
-) : (
-  savedBooks.map((book) => (
-    <View key={book.id} style={styles.activityItem}>
-      <Image source={{ uri: book.cover_url }} style={styles.activityCover} />
-      <View style={styles.activityInfo}>
-        <Text style={styles.activityTitle} numberOfLines={1}>
-          {book.title}
-        </Text>
-        <Text style={styles.activityAuthor}>
-          {book.page_count ? `${book.page_count} pages` : "Pages N/A"}
-        </Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color={colors.secondary} />
-    </View>
-  ))
-)}
 
-       {/* 
-        {RECENT_BOOKS.map((book) => (
-          <View key={book.id} style={styles.activityItem}>
-            <Image source={{ uri: book.cover }} style={styles.activityCover} />
-            <View style={styles.activityInfo}>
-              <Text style={styles.activityTitle} numberOfLines={1}>{book.title}</Text>
-              <Text style={styles.activityAuthor}>{book.author}</Text>
-              <View style={styles.statusBadge}>
-                <View style={[
-                  styles.statusDot, 
-                  { backgroundColor: 
-                    book.status === 'reading' ? '#4CAF50' : 
-                    book.status === 'completed' ? '#2196F3' : 
-                    '#FF9800' 
-                  }
-                ]} >/
-              
-                <Text style={styles.statusText}>
-                  {book.status === 'reading' ? 'Currently Reading' : 
-                   book.status === 'completed' ? 'Completed' : 
-                   'Want to Read'}
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.secondary} />
-          </View>
-        ))*/}
-=======
-        
-        {/* change - uses real recentBooks state */}
         {recentBooks.length === 0 ? (
           <Text style={{ color: colors.secondary, fontSize: typography.fontSizes.sm }}>
             No recent activity yet.
@@ -280,11 +181,9 @@ export default function ProfileScreen({ navigation }) {
               : book?.authors || '';
             return (
               <View key={userBook.id} style={styles.activityItem}>
-                {/* change - book.cover → book?.cover_url (new column name from DB) */}
                 <Image source={{ uri: book?.cover_url }} style={styles.activityCover} />
                 <View style={styles.activityInfo}>
                   <Text style={styles.activityTitle} numberOfLines={1}>{book?.title}</Text>
-                  {/* change - book.author → authors (handles array from DB) */}
                   <Text style={styles.activityAuthor}>{authors}</Text>
                   <View style={styles.statusBadge}>
                     <View style={[
@@ -307,10 +206,42 @@ export default function ProfileScreen({ navigation }) {
             );
           })
         )}
->>>>>>> d0b3e8376ad6698f72b51f2a2311687722984b1d
       </View>
 
-      {/* Annotations keeping until annotations feature is built */}
+      {/* Saved Books — teammate's feature */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Saved Books</Text>
+          <TouchableOpacity>
+            <Text style={styles.seeAllText}>View All</Text>
+          </TouchableOpacity>
+        </View>
+
+        {loadingSaved ? (
+          <Text style={{ color: colors.secondary, fontSize: typography.fontSizes.sm }}>
+            Loading…
+          </Text>
+        ) : savedBooks.length === 0 ? (
+          <Text style={{ color: colors.secondary, fontSize: typography.fontSizes.sm }}>
+            No saved books yet.
+          </Text>
+        ) : (
+          savedBooks.map((book) => (
+            <View key={book.id} style={styles.activityItem}>
+              <Image source={{ uri: book.cover_url }} style={styles.activityCover} />
+              <View style={styles.activityInfo}>
+                <Text style={styles.activityTitle} numberOfLines={1}>{book.title}</Text>
+                <Text style={styles.activityAuthor}>
+                  {book.page_count ? `${book.page_count} pages` : 'Pages N/A'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.secondary} />
+            </View>
+          ))
+        )}
+      </View>
+
+      {/* Annotations — keeping until annotations feature is built */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Your Annotations</Text>
@@ -318,7 +249,7 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.seeAllText}>View All</Text>
           </TouchableOpacity>
         </View>
-        
+
         <View style={styles.annotationPreview}>
           <View style={styles.annotationHeader}>
             <Text style={styles.annotationBook}>The Housemaid</Text>
@@ -346,10 +277,10 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Account Info — real user?.email and user?.joinDate */}
+      {/* Account Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account Information</Text>
-        
+
         <View style={styles.infoRow}>
           <Ionicons name="mail-outline" size={20} color={colors.secondary} />
           <View style={styles.infoText}>
