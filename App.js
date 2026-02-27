@@ -12,8 +12,9 @@ import HomeScreen from './screens/HomeScreen';
 import MyBooksScreen from './screens/MyBooksScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import BooksPage from './Fenoon/BooksPage';
-//import ReaderScreen from "./Fenoon/readerScreen";
-import LoginScreen from './screens/LoginScreen'; // add login screen
+import LoginScreen from './screens/LoginScreen';
+import ReadingStatsScreen from './screens/ReadingStatsScreen';
+import ReadingViewScreen from './screens/ReadingViewScreen';
 
 // Import theme
 import theme from './theme';
@@ -22,7 +23,7 @@ const colors = theme.colors;
 const Drawer = createDrawerNavigator();
 const Stack = createStackNavigator();
 
-// Home Stack, includes home and book details 
+// Home Stack - includes home and book details
 function HomeStack() {
   return (
     <Stack.Navigator
@@ -31,8 +32,8 @@ function HomeStack() {
       }}
     >
       <Stack.Screen name="HomeMain" component={HomeScreen} />
-      <Stack.Screen 
-        name="BookDetails" 
+      <Stack.Screen
+        name="BookDetails"
         component={BookDetailsScreen}
         options={{
           headerShown: true,
@@ -41,6 +42,102 @@ function HomeStack() {
           },
           headerTintColor: colors.navText,
           headerTitle: 'Book Details',
+        }}
+      />
+      <Stack.Screen
+        name="ReadingView"
+        component={ReadingViewScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+// Search Stack
+function SearchStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Stack.Screen name="SearchMain" component={BooksPage} />
+      <Stack.Screen
+        name="BookDetails"
+        component={BookDetailsScreen}
+        options={{
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: colors.navBackground,
+          },
+          headerTintColor: colors.navText,
+          headerTitle: 'Book Details',
+        }}
+      />
+      <Stack.Screen
+        name="ReadingView"
+        component={ReadingViewScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+// MyBooks Stack - includes my books and book details
+function MyBooksStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Stack.Screen name="MyBooksMain" component={MyBooksScreen} />
+      <Stack.Screen
+        name="BookDetails"
+        component={BookDetailsScreen}
+        options={{
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: colors.navBackground,
+          },
+          headerTintColor: colors.navText,
+          headerTitle: 'Book Details',
+        }}
+      />
+      <Stack.Screen
+        name="ReadingView"
+        component={ReadingViewScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+// Profile Stack - includes profile and reading stats
+function ProfileStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen
+        name="ReadingStats"
+        component={ReadingStatsScreen}
+        options={{
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: colors.navBackground,
+          },
+          headerTintColor: colors.navText,
+          headerTitle: 'Reading Statistics',
         }}
       />
     </Stack.Navigator>
@@ -101,7 +198,7 @@ function DrawerNavigator() {
 
       <Drawer.Screen 
         name="Search" 
-        component={BooksPage}
+        component={SearchStack}
         options={{
           drawerLabel: 'Search Books',
           title: 'Search',
@@ -117,7 +214,7 @@ function DrawerNavigator() {
       
       <Drawer.Screen 
         name="MyBooks" 
-        component={MyBooksScreen}
+        component={MyBooksStack}
         options={{
           drawerLabel: 'My Books',
           title: 'My Books',
@@ -148,7 +245,7 @@ function DrawerNavigator() {
       
       <Drawer.Screen 
         name="Profile" 
-        component={ProfileScreen}
+        component={ProfileStack}
         options={{
           drawerLabel: 'User Profile',
           title: 'User Profile',
@@ -164,6 +261,7 @@ function DrawerNavigator() {
     </Drawer.Navigator>
   );
 }
+
 // Make Login the first screen, the direct user to Home (drawer) once login
 export default function App() {
   return (

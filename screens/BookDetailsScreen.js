@@ -1,9 +1,9 @@
+import React, { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors, spacing, typography } from '../theme';
 
 export default function BookDetailsScreen({ route, navigation }) {
-
   // For now, using sample data
   const book = {
     title: 'IT',
@@ -16,12 +16,17 @@ export default function BookDetailsScreen({ route, navigation }) {
     publishYear: 1987,
     genres: ['Fiction', 'Fantasy', 'Horror'],
     isbn: '9780451149510',
+    currentPage: 721,
+    readingStatus: 'reading', // 'reading', 'completed', 'want-to-read', or null
+    progress: 61, // percentage
   };
 
   const handleBeginReading = () => {
-    console.log('Begin reading:', book.title);
-    alert('Reading view coming soon!\n\nThis will open the book reader with:\n- Chapter navigation\n- Annotation tools\n- Progress tracking');
-  };
+  navigation.navigate('ReadingView', { 
+    book: book,
+    startPage: book.currentPage || 1 
+  });
+};
 
   const handleAddToLibrary = () => {
     alert('Added to your library!');
@@ -41,34 +46,80 @@ export default function BookDetailsScreen({ route, navigation }) {
         <Ionicons key={i} name="star" size={18} color="#FFD700" />
       );
     }
+
     if (hasHalfStar) {
       stars.push(
         <Ionicons key="half" name="star-half" size={18} color="#FFD700" />
       );
     }
+
     const emptyStars = 5 - Math.ceil(rating);
     for (let i = 0; i < emptyStars; i++) {
       stars.push(
         <Ionicons key={`empty-${i}`} name="star-outline" size={18} color="#FFD700" />
       );
     }
+
     return stars;
   };
+
+  const getStatusInfo = () => {
+    switch (book.readingStatus) {
+      case 'reading':
+        return {
+          icon: 'book',
+          text: 'Currently Reading',
+          color: '#4CAF50',
+        };
+      case 'completed':
+        return {
+          icon: 'checkmark-circle',
+          text: 'Completed',
+          color: '#2196F3',
+        };
+      case 'want-to-read':
+        return {
+          icon: 'bookmark',
+          text: 'Want to Read',
+          color: '#FF9800',
+        };
+      default:
+        return null;
+    }
+  };
+
+  const statusInfo = getStatusInfo();
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.content}>
         {/* Book Cover and Basic Info */}
         <View style={styles.headerSection}>
-          <Image 
-            source={{ uri: book.cover }} 
-            style={styles.coverImage}
-            resizeMode="cover"
-          />
+          <View style={styles.coverContainer}>
+            <Image
+              source={{ uri: book.cover }}
+              style={styles.coverImage}
+              resizeMode="cover"
+            />
+            {/* Status Badge on Cover */}
+            {statusInfo && (
+              <View style={[styles.statusBadge, { backgroundColor: statusInfo.color }]}>
+                <Ionicons name={statusInfo.icon} size={14} color="#FFFFFF" />
+              </View>
+            )}
+          </View>
           
           <View style={styles.headerInfo}>
             <Text style={styles.title}>{book.title}</Text>
             <Text style={styles.author}>by {book.author}</Text>
+            
+            {/* Status Text */}
+            {statusInfo && (
+              <View style={styles.statusContainer}>
+                <View style={[styles.statusDot, { backgroundColor: statusInfo.color }]} />
+                <Text style={styles.statusText}>{statusInfo.text}</Text>
+              </View>
+            )}
             
             {/* Rating */}
             <View style={styles.ratingContainer}>
@@ -76,35 +127,63 @@ export default function BookDetailsScreen({ route, navigation }) {
                 {renderStars(book.rating)}
               </View>
               <Text style={styles.ratingText}>
-                {book.rating} ({book.totalRatings} ratings)
+                {book.rating} ({book.totalRatings.toLocaleString()} ratings)
               </Text>
             </View>
 
-            {/* Book Info */}
+            {/* Book Info Pills */}
             <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <Ionicons name="book-outline" size={16} color={colors.secondary} />
-                <Text style={styles.infoText}>{book.pageCount} pages</Text>
+              <View style={styles.infoPill}>
+                <Ionicons name="book-outline" size={14} color={colors.secondary} />
+                <Text style={styles.infoPillText}>{book.pageCount} pages</Text>
               </View>
-              <View style={styles.infoItem}>
-                <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                <Text style={styles.infoText}>{book.publishYear}</Text>
+              <View style={styles.infoPill}>
+                <Ionicons name="calendar-outline" size={14} color={colors.secondary} />
+                <Text style={styles.infoPillText}>{book.publishYear}</Text>
               </View>
             </View>
           </View>
         </View>
 
+        {/* Progress Section - Only show if currently reading */}
+        {book.readingStatus === 'reading' && book.currentPage && (
+          <View style={styles.progressSection}>
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressTitle}>Your Progress</Text>
+              <Text style={styles.progressPercentage}>{book.progress}%</Text>
+            </View>
+            
+            <View style={styles.progressBarContainer}>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: `${book.progress}%` }]} />
+              </View>
+            </View>
+            
+            <Text style={styles.progressText}>
+              Page {book.currentPage} of {book.pageCount}
+            </Text>
+          </View>
+        )}
+
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.primaryButton}
             onPress={handleBeginReading}
           >
-            <Text style={styles.primaryButtonText}>Begin Reading</Text>
+            <Ionicons 
+              name={book.readingStatus === 'reading' ? 'play' : 'book-outline'} 
+              size={20} 
+              color={colors.buttonText}
+              style={styles.buttonIcon}
+            />
+            <Text style={styles.primaryButtonText}>
+              {book.readingStatus === 'reading' ? 'Continue Reading' : 'Begin Reading'}
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.secondaryButtons}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.secondaryButton}
               onPress={handleAddToLibrary}
             >
@@ -112,7 +191,7 @@ export default function BookDetailsScreen({ route, navigation }) {
               <Text style={styles.secondaryButtonText}>Add to Library</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.secondaryButton}
               onPress={handleJoinBookClub}
             >
@@ -136,24 +215,28 @@ export default function BookDetailsScreen({ route, navigation }) {
 
         {/* Description */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Description</Text>
+          <Text style={styles.sectionTitle}>About this book</Text>
           <Text style={styles.description}>{book.description}</Text>
         </View>
 
         {/* Additional Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Details</Text>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>ISBN:</Text>
-            <Text style={styles.detailValue}>{book.isbn}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Pages:</Text>
-            <Text style={styles.detailValue}>{book.pageCount}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Published:</Text>
-            <Text style={styles.detailValue}>{book.publishYear}</Text>
+          <View style={styles.detailsCard}>
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>ISBN</Text>
+              <Text style={styles.detailValue}>{book.isbn}</Text>
+            </View>
+            <View style={styles.detailDivider} />
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Pages</Text>
+              <Text style={styles.detailValue}>{book.pageCount}</Text>
+            </View>
+            <View style={styles.detailDivider} />
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Published</Text>
+              <Text style={styles.detailValue}>{book.publishYear}</Text>
+            </View>
           </View>
         </View>
 
@@ -172,17 +255,42 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.lg,
   },
-  
+
   // Header Section
   headerSection: {
     flexDirection: 'row',
     marginBottom: spacing.xl,
+  },
+  coverContainer: {
+    position: 'relative',
   },
   coverImage: {
     width: 120,
     height: 180,
     borderRadius: 8,
     backgroundColor: colors.surface,
+    // Add subtle shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statusBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // Shadow for badge
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   headerInfo: {
     flex: 1,
@@ -193,12 +301,33 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
     color: colors.primary,
     marginBottom: spacing.xs,
+    lineHeight: typography.fontSizes.xxl * 1.2,
   },
   author: {
     fontSize: typography.fontSizes.base,
     color: colors.secondary,
+    marginBottom: spacing.sm,
+  },
+
+  // Status
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: spacing.md,
   },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: spacing.xs,
+  },
+  statusText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.secondary,
+    fontWeight: typography.fontWeights.medium,
+  },
+
+  // Rating
   ratingContainer: {
     marginBottom: spacing.md,
   },
@@ -210,20 +339,69 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
   },
+
+  // Info Pills
   infoRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
+    flexWrap: 'wrap',
   },
-  infoItem: {
+  infoPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 12,
   },
-  infoText: {
+  infoPillText: {
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
   },
-  
+
+  // Progress Section
+  progressSection: {
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: 12,
+    marginBottom: spacing.xl,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  progressTitle: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.primary,
+  },
+  progressPercentage: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.buttonPrimary,
+  },
+  progressBarContainer: {
+    marginBottom: spacing.sm,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: colors.border,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.buttonPrimary,
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.secondary,
+  },
+
   // Action Buttons
   actionButtons: {
     marginBottom: spacing.xl,
@@ -233,7 +411,18 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: spacing.md,
+    flexDirection: 'row',
+    // Add subtle shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  buttonIcon: {
+    marginRight: spacing.xs,
   },
   primaryButtonText: {
     color: colors.buttonText,
@@ -254,13 +443,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
+    backgroundColor: colors.background,
   },
   secondaryButtonText: {
     fontSize: typography.fontSizes.sm,
     color: colors.primary,
     fontWeight: typography.fontWeights.medium,
   },
-  
+
   // Sections
   section: {
     marginBottom: spacing.xl,
@@ -271,7 +461,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     marginBottom: spacing.md,
   },
-  
+
   // Genres
   genresContainer: {
     flexDirection: 'row',
@@ -283,36 +473,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   genreText: {
     fontSize: typography.fontSizes.sm,
     color: colors.primary,
     fontWeight: typography.fontWeights.medium,
   },
-  
+
   // Description
   description: {
     fontSize: typography.fontSizes.base,
     color: colors.primary,
     lineHeight: typography.lineHeights.relaxed * typography.fontSizes.base,
   },
-  
-  // Details
+
+  // Details Card
+  detailsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: spacing.md,
+  },
   detailRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+  },
+  detailDivider: {
+    height: 1,
+    backgroundColor: colors.border,
   },
   detailLabel: {
     fontSize: typography.fontSizes.base,
     color: colors.secondary,
     fontWeight: typography.fontWeights.medium,
-    width: 100,
   },
   detailValue: {
     fontSize: typography.fontSizes.base,
     color: colors.primary,
-    flex: 1,
+    fontWeight: typography.fontWeights.semibold,
   },
 });

@@ -15,7 +15,7 @@ export default function MyBooksScreen({ navigation }) {
     completed: [],
   });
 
-  // fetch real books from DB when screen appears 
+  // Fetch real books from DB when screen appears
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
@@ -45,7 +45,7 @@ export default function MyBooksScreen({ navigation }) {
           // Helper to format each userBook row
           const formatBook = (ub) => {
             const book = ub.books;
-            // authors  an array in DB, joint into a string
+            // authors is an array in DB, join into a string
             const authors = Array.isArray(book?.authors)
               ? book.authors.join(', ')
               : book?.authors || '';
@@ -60,9 +60,11 @@ export default function MyBooksScreen({ navigation }) {
               currentPage: ub.current_page || 0,
               totalPages: book?.page_count || 0,
               progress,
+              lastRead: 'Recently', // Add a real timestamp logic later
               completedDate: ub.finished_at
                 ? new Date(ub.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                 : null,
+              rating: 4.2, // Placeholder, so we can add real ratings later
             };
           };
 
@@ -86,40 +88,63 @@ export default function MyBooksScreen({ navigation }) {
     alert(`Continue reading: ${book.title}\n\nReading view coming soon!`);
   };
 
+  // Enhanced the currently reading card with a  better progress UI
   const CurrentlyReadingCard = ({ book }) => (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={styles.currentCard}
       onPress={() => handleBookPress(book)}
       activeOpacity={0.8}
     >
-      <Image 
-        source={{ uri: book.cover }} 
+      <Image
+        source={{ uri: book.cover }}
         style={styles.currentCover}
         resizeMode="cover"
       />
       
       <View style={styles.currentInfo}>
-        <Text style={styles.currentTitle} numberOfLines={2}>{book.title}</Text>
-        <Text style={styles.currentAuthor}>{book.author}</Text>
-        
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${book.progress}%` }]} />
+        <View style={styles.currentHeader}>
+          <View style={styles.currentTitleContainer}>
+            <Text style={styles.currentTitle} numberOfLines={2}>{book.title}</Text>
+            <Text style={styles.currentAuthor}>{book.author}</Text>
           </View>
-          <Text style={styles.progressText}>{book.progress}%</Text>
+          
+          {/* Progress Circle Badge */}
+          <View style={styles.progressCircle}>
+            <Text style={styles.progressCircleText}>{book.progress}%</Text>
+          </View>
         </View>
         
-        <Text style={styles.pageCount}>
-          Page {book.currentPage} of {book.totalPages}
-        </Text>
+        {/* Enhanced Progress Bar */}
+        <View style={styles.progressSection}>
+          <View style={styles.progressBarContainer}>
+            <View style={styles.progressBar}>
+              <View style={[styles.progressFill, { width: `${book.progress}%` }]} />
+            </View>
+          </View>
+          
+          <View style={styles.progressDetails}>
+            <View style={styles.progressDetailItem}>
+              <Ionicons name="bookmark-outline" size={14} color={colors.secondary} />
+              <Text style={styles.progressDetailText}>
+                Page {book.currentPage} of {book.totalPages}
+              </Text>
+            </View>
+            <View style={styles.progressDetailItem}>
+              <Ionicons name="time-outline" size={14} color={colors.secondary} />
+              <Text style={styles.progressDetailText}>{book.lastRead}</Text>
+            </View>
+          </View>
+        </View>
         
-        <TouchableOpacity 
+        {/* Action Button */}
+        <TouchableOpacity
           style={styles.continueButton}
           onPress={(e) => {
             e.stopPropagation();
             handleContinueReading(book);
           }}
         >
+          <Ionicons name="play" size={16} color={colors.buttonText} />
           <Text style={styles.continueButtonText}>Continue Reading</Text>
           <Ionicons name="arrow-forward" size={16} color={colors.buttonText} />
         </TouchableOpacity>
@@ -127,27 +152,47 @@ export default function MyBooksScreen({ navigation }) {
     </TouchableOpacity>
   );
 
+  // Enhanced the book card for the want to read or completed
   const BookCard = ({ book, showDate }) => (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={styles.bookCard}
       onPress={() => handleBookPress(book)}
       activeOpacity={0.8}
     >
-      <Image 
-        source={{ uri: book.cover }} 
-        style={styles.bookCover}
-        resizeMode="cover"
-      />
+      <View style={styles.bookCardContent}>
+        <Image
+          source={{ uri: book.cover }}
+          style={styles.bookCover}
+          resizeMode="cover"
+        />
+        
+        {/* Completed Badge */}
+        {showDate && (
+          <View style={styles.completedBadge}>
+            <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+          </View>
+        )}
+      </View>
       
       <View style={styles.bookInfo}>
         <Text style={styles.bookTitle} numberOfLines={2}>{book.title}</Text>
         <Text style={styles.bookAuthor} numberOfLines={1}>{book.author}</Text>
         
-        {showDate && book.completedDate && (
-          <Text style={styles.completedDate}>
-            Completed {book.completedDate}
-          </Text>
-        )}
+        <View style={styles.bookMeta}>
+          {book.rating && (
+            <View style={styles.ratingContainer}>
+              <Ionicons name="star" size={12} color="#FFD700" />
+              <Text style={styles.ratingText}>{book.rating}</Text>
+            </View>
+          )}
+          
+          {showDate && book.completedDate && (
+            <>
+              {book.rating && <Text style={styles.metaDot}>•</Text>}
+              <Text style={styles.completedDate}>{book.completedDate}</Text>
+            </>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -174,16 +219,13 @@ export default function MyBooksScreen({ navigation }) {
 
     if (selectedTab === 'wantToRead') {
       return (
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.gridContent}
-        >
-          {/* was LIBRARY_DATA.wantToRead, now libraryData */}
+        <View style={styles.gridContainer}>
           {libraryData.wantToRead.length > 0 ? (
-            libraryData.wantToRead.map((book) => (
-              <BookCard key={book.id} book={book} />
-            ))
+            <View style={styles.gridContent}>
+              {libraryData.wantToRead.map((book) => (
+                <BookCard key={book.id} book={book} />
+              ))}
+            </View>
           ) : (
             <EmptyState
               icon="bookmark-outline"
@@ -191,22 +233,19 @@ export default function MyBooksScreen({ navigation }) {
               text="Add books you want to read later"
             />
           )}
-        </ScrollView>
+        </View>
       );
     }
 
     if (selectedTab === 'completed') {
       return (
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.gridContent}
-        >
-          {/* was LIBRARY_DATA.completed, now libraryData */}
+        <View style={styles.gridContainer}>
           {libraryData.completed.length > 0 ? (
-            libraryData.completed.map((book) => (
-              <BookCard key={book.id} book={book} showDate={true} />
-            ))
+            <View style={styles.gridContent}>
+              {libraryData.completed.map((book) => (
+                <BookCard key={book.id} book={book} showDate={true} />
+              ))}
+            </View>
           ) : (
             <EmptyState
               icon="checkmark-circle-outline"
@@ -214,7 +253,7 @@ export default function MyBooksScreen({ navigation }) {
               text="Finished books will appear here"
             />
           )}
-        </ScrollView>
+        </View>
       );
     }
   };
@@ -224,17 +263,29 @@ export default function MyBooksScreen({ navigation }) {
       {/* Header Stats — use real counts from libraryData state */}
       <View style={styles.header}>
         <View style={styles.statBox}>
-          {/* LIBRARY_DATA.currentlyReading.length */}
+          <View style={styles.statIconContainer}>
+            <Ionicons name="book" size={24} color={colors.buttonPrimary} />
+          </View>
           <Text style={styles.statNumber}>{libraryData.currentlyReading.length}</Text>
           <Text style={styles.statLabel}>Reading</Text>
         </View>
+        
+        <View style={styles.statDivider} />
+        
         <View style={styles.statBox}>
-          {/* LIBRARY_DATA.wantToRead.length */}
+          <View style={styles.statIconContainer}>
+            <Ionicons name="bookmark" size={24} color="#FF9800" />
+          </View>
           <Text style={styles.statNumber}>{libraryData.wantToRead.length}</Text>
           <Text style={styles.statLabel}>Want to Read</Text>
         </View>
+        
+        <View style={styles.statDivider} />
+        
         <View style={styles.statBox}>
-          {/* LIBRARY_DATA.completed.length */}
+          <View style={styles.statIconContainer}>
+            <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
+          </View>
           <Text style={styles.statNumber}>{libraryData.completed.length}</Text>
           <Text style={styles.statLabel}>Completed</Text>
         </View>
@@ -242,56 +293,66 @@ export default function MyBooksScreen({ navigation }) {
 
       {/* Tab Navigation */}
       <View style={styles.tabs}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tab, selectedTab === 'currentlyReading' && styles.tabActive]}
           onPress={() => setSelectedTab('currentlyReading')}
         >
-          <Ionicons 
-            name="book" 
-            size={20} 
-            color={selectedTab === 'currentlyReading' ? colors.buttonPrimary : colors.secondary} 
+          <Ionicons
+            name="book"
+            size={20}
+            color={selectedTab === 'currentlyReading' ? colors.buttonPrimary : colors.secondary}
           />
-          <Text style={[styles.tabText, selectedTab === 'currentlyReading' && styles.tabTextActive]}>
+          <Text style={[
+            styles.tabText,
+            selectedTab === 'currentlyReading' && styles.tabTextActive
+          ]}>
             Reading
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tab, selectedTab === 'wantToRead' && styles.tabActive]}
           onPress={() => setSelectedTab('wantToRead')}
         >
-          <Ionicons 
-            name="bookmark" 
-            size={20} 
-            color={selectedTab === 'wantToRead' ? colors.buttonPrimary : colors.secondary} 
+          <Ionicons
+            name="bookmark"
+            size={20}
+            color={selectedTab === 'wantToRead' ? colors.buttonPrimary : colors.secondary}
           />
-          <Text style={[styles.tabText, selectedTab === 'wantToRead' && styles.tabTextActive]}>
+          <Text style={[
+            styles.tabText,
+            selectedTab === 'wantToRead' && styles.tabTextActive
+          ]}>
             Want to Read
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tab, selectedTab === 'completed' && styles.tabActive]}
           onPress={() => setSelectedTab('completed')}
         >
-          <Ionicons 
-            name="checkmark-circle" 
-            size={20} 
-            color={selectedTab === 'completed' ? colors.buttonPrimary : colors.secondary} 
+          <Ionicons
+            name="checkmark-circle"
+            size={20}
+            color={selectedTab === 'completed' ? colors.buttonPrimary : colors.secondary}
           />
-          <Text style={[styles.tabText, selectedTab === 'completed' && styles.tabTextActive]}>
+          <Text style={[
+            styles.tabText,
+            selectedTab === 'completed' && styles.tabTextActive
+          ]}>
             Completed
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* Content */}
-      <ScrollView style={styles.scrollContent}>
+      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {renderContent()}
       </ScrollView>
     </View>
   );
 }
+
 
 const EmptyState = ({ icon, title, text }) => (
   <View style={styles.emptyState}>
@@ -306,6 +367,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+
   header: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
@@ -318,16 +380,27 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
+  statIconContainer: {
+    marginBottom: spacing.xs,
+  },
   statNumber: {
     fontSize: typography.fontSizes.xxl,
     fontWeight: typography.fontWeights.bold,
     color: colors.primary,
-  },
-  statLabel: {
-    fontSize: typography.fontSizes.sm,
-    color: colors.secondary,
     marginTop: spacing.xs,
   },
+  statLabel: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.secondary,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+
   tabs: {
     flexDirection: 'row',
     backgroundColor: colors.background,
@@ -341,7 +414,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.xs,
     paddingVertical: spacing.md,
-    borderBottomWidth: 2,
+    borderBottomWidth: 3,
     borderBottomColor: 'transparent',
   },
   tabActive: {
@@ -356,71 +429,112 @@ const styles = StyleSheet.create({
     color: colors.buttonPrimary,
     fontWeight: typography.fontWeights.semibold,
   },
+
   scrollContent: {
     flex: 1,
   },
   content: {
     padding: spacing.lg,
   },
+  gridContainer: {
+    flex: 1,
+  },
   gridContent: {
     padding: spacing.lg,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.md,
   },
+
   currentCard: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: 12,
     padding: spacing.md,
     marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   currentCover: {
-    width: 80,
-    height: 120,
+    width: 90,
+    height: 135,
     borderRadius: 8,
+    backgroundColor: colors.background,
   },
   currentInfo: {
     flex: 1,
     marginLeft: spacing.md,
+  },
+  currentHeader: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  currentTitleContainer: {
+    flex: 1,
+    marginRight: spacing.sm,
   },
   currentTitle: {
     fontSize: typography.fontSizes.lg,
-    fontWeight: typography.fontWeights.semibold,
+    fontWeight: typography.fontWeights.bold,
     color: colors.primary,
+    marginBottom: 4,
   },
   currentAuthor: {
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
-    marginTop: 2,
   },
-  progressContainer: {
-    flexDirection: 'row',
+
+  progressCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.buttonPrimary,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: spacing.sm,
+  },
+  progressCircleText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.buttonText,
+  },
+
+  progressSection: {
+    marginBottom: spacing.sm,
+  },
+  progressBarContainer: {
+    marginBottom: spacing.sm,
   },
   progressBar: {
-    flex: 1,
-    height: 6,
+    height: 8,
     backgroundColor: colors.border,
-    borderRadius: 3,
+    borderRadius: 4,
     overflow: 'hidden',
-    marginRight: spacing.sm,
   },
   progressFill: {
     height: '100%',
     backgroundColor: colors.buttonPrimary,
-    borderRadius: 3,
+    borderRadius: 4,
   },
-  progressText: {
+  progressDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  progressDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  progressDetailText: {
     fontSize: typography.fontSizes.xs,
     color: colors.secondary,
-    width: 35,
   },
-  pageCount: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
-    marginTop: 2,
-  },
+
   continueButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -429,23 +543,49 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: 8,
-    marginTop: spacing.sm,
+    gap: spacing.xs,
   },
   continueButtonText: {
     color: colors.buttonText,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
-    marginRight: spacing.xs,
+    flex: 1,
+    textAlign: 'center',
   },
+
   bookCard: {
-    width: 140,
-    marginRight: spacing.md,
+    width: '47%',
+    marginBottom: spacing.md,
+  },
+  bookCardContent: {
+    position: 'relative',
   },
   bookCover: {
-    width: 140,
-    height: 210,
+    width: '100%',
+    height: 220,
     borderRadius: 8,
     backgroundColor: colors.surface,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  completedBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#4CAF50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   bookInfo: {
     marginTop: spacing.sm,
@@ -454,24 +594,43 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
     color: colors.primary,
-    height: 36,
+    marginBottom: 4,
+    height: 34,
   },
   bookAuthor: {
     fontSize: typography.fontSizes.xs,
     color: colors.secondary,
-    marginTop: 2,
+    marginBottom: spacing.xs,
+  },
+  bookMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  ratingText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.primary,
+    fontWeight: typography.fontWeights.medium,
+  },
+  metaDot: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.secondary,
   },
   completedDate: {
     fontSize: typography.fontSizes.xs,
     color: colors.secondary,
-    marginTop: spacing.xs,
-    fontStyle: 'italic',
   },
+
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xxl,
-    marginTop: spacing.xl,
+    marginTop: spacing.xxl,
   },
   emptyTitle: {
     fontSize: typography.fontSizes.xl,
