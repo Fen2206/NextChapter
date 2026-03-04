@@ -15,11 +15,11 @@ export default function ProfileScreen({ navigation }) {
     totalAnnotations: 0,
   });
 
-  // keep saved books state
+  // saved books state
   const [savedBooks, setSavedBooks] = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
 
-  // keep saved books fetch
+  // saved books fetch
   const fetchSavedBooks = useCallback(async () => {
     try {
       setLoadingSaved(true);
@@ -43,7 +43,7 @@ export default function ProfileScreen({ navigation }) {
     }
   }, []);
 
-  // Main profile + stats fetch, also triggers savedBooks refresh
+  // main profile + stats fetch, also triggers savedBooks refresh
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
@@ -99,7 +99,7 @@ export default function ProfileScreen({ navigation }) {
           setRecentBooks(userBooks.slice(0, 3));
         }
 
-        // Refresh saved books at the same time
+        // refresh saved books at the same time
         fetchSavedBooks();
       };
       fetchData();
@@ -111,7 +111,7 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const handleSettings = () => {
-    alert('Settings coming soon!');
+    navigation.navigate('Settings');
   };
 
   const StatCard = ({ icon, label, value, color = colors.primary }) => (
@@ -124,13 +124,12 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <ScrollView style={styles.container}>
+
       {/* Profile Header */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
+          {/* no camera button here — photo only editable via Edit Profile */}
           <Image source={{ uri: user?.avatar }} style={styles.avatar} />
-          <TouchableOpacity style={styles.editAvatarButton} onPress={handleEditProfile}>
-            <Ionicons name="camera" size={16} color={colors.buttonText} />
-          </TouchableOpacity>
         </View>
 
         <Text style={styles.name}>{user?.name || 'Reader'}</Text>
@@ -160,7 +159,7 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Recent Activity — from user_books (your version) */}
+      {/* Recent Activity — from user_books */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
@@ -277,27 +276,6 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Account Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account Information</Text>
-
-        <View style={styles.infoRow}>
-          <Ionicons name="mail-outline" size={20} color={colors.secondary} />
-          <View style={styles.infoText}>
-            <Text style={styles.infoLabel}>Email</Text>
-            <Text style={styles.infoValue}>{user?.email || ''}</Text>
-          </View>
-        </View>
-
-        <View style={styles.infoRow}>
-          <Ionicons name="calendar-outline" size={20} color={colors.secondary} />
-          <View style={styles.infoText}>
-            <Text style={styles.infoLabel}>Member Since</Text>
-            <Text style={styles.infoValue}>{user?.joinDate || ''}</Text>
-          </View>
-        </View>
-      </View>
-
       <View style={{ height: spacing.xxl }} />
     </ScrollView>
   );
@@ -324,19 +302,6 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 50,
     backgroundColor: colors.buttonPrimary,
-  },
-  editAvatarButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: colors.buttonPrimary,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: colors.background,
   },
   name: {
     fontSize: typography.fontSizes.xxl,
@@ -502,26 +467,5 @@ const styles = StyleSheet.create({
   annotationNote: {
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-  },
-  infoText: {
-    marginLeft: spacing.md,
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: typography.fontSizes.sm,
-    color: colors.secondary,
-    marginBottom: spacing.xs,
-  },
-  infoValue: {
-    fontSize: typography.fontSizes.base,
-    color: colors.primary,
-    fontWeight: typography.fontWeights.medium,
   },
 });

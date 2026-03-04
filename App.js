@@ -11,6 +11,8 @@ import CommunityScreen from './screens/CommunityScreen';
 import HomeScreen from './screens/HomeScreen';
 import MyBooksScreen from './screens/MyBooksScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import EditProfileScreen from './screens/EditProfileScreen'; // add edit profile screen
+import SettingsScreen from './screens/SettingsScreen'; //add settings
 import BooksPage from './Fenoon/BooksPage';
 //import ReaderScreen from "./Fenoon/readerScreen";
 import LoginScreen from './screens/LoginScreen'; // add login screen
@@ -171,7 +173,30 @@ export default function App() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Home" component={DrawerNavigator} />
+        <Stack.Screen
+          name="EditProfile"
+          component={EditProfileScreen}
+          options={{
+            headerShown: true,
+            headerStyle: { backgroundColor: colors.navBackground },
+            headerTintColor: colors.navText,
+            headerTitle: 'Edit Profile',
+            headerBackTitle: 'Profile',
+          }}
+        />
+        <Stack.Screen
+          name="Settings"
+          component={SettingsScreen}
+          options={{
+            headerShown: true,
+            headerStyle: { backgroundColor: colors.navBackground },
+            headerTintColor: colors.navText,
+            headerTitle: 'Settings',
+            headerBackTitle: 'Profile',
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
+
