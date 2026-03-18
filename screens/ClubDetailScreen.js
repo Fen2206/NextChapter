@@ -9,7 +9,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Image,
@@ -35,6 +35,7 @@ export default function ClubDetailScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showNewThreadModal, setShowNewThreadModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
 
   useFocusEffect(
@@ -209,10 +210,94 @@ export default function ClubDetailScreen({ route, navigation }) {
     setShowNewThreadModal(true);
   };
 
+  // Delete club, only the owner can do this!
+  const handleDeleteClub = () => {
+    Alert.alert(
+      'Delete Club',
+      `Are you sure you want to delete "${clubDetails?.name}"? This will permanently remove all discussions and members. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await supabase.from('club_memberships').delete().eq('club_id', club.id);
+              const { data: threadIds } = await supabase
+                .from('threads').select('id').eq('club_id', club.id);
+              if (threadIds && threadIds.length > 0) {
+                const ids = threadIds.map(t => t.id);
+                await supabase.from('thread_comments').delete().in('thread_id', ids);
+                await supabase.from('threads').delete().eq('club_id', club.id);
+              }
+              const { error } = await supabase.from('clubs').delete().eq('id', club.id);
+              if (error) throw error;
+              Alert.alert('Deleted', `"${clubDetails?.name}" has been deleted.`, [
+                { text: 'OK', onPress: () => navigation.navigate('Community') }
+              ]);
+            } catch (error) {
+              console.error('Error deleting club:', error);
+              Alert.alert('Error', 'Failed to delete club. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Leave club, member only
+  const handleLeaveClub = () => {
+    Alert.alert(
+      'Leave Club',
+      `Are you sure you want to leave "${clubDetails?.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('club_memberships')
+                .delete()
+                .eq('club_id', club.id)
+                .eq('user_id', currentUserId);
+              if (error) throw error;
+              Alert.alert('Left Club', `You have left "${clubDetails?.name}".`, [
+                { text: 'OK', onPress: () => navigation.navigate('Community') }
+              ]);
+            } catch (error) {
+              console.error('Error leaving club:', error);
+              Alert.alert('Error', 'Failed to leave club. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Options menu
+  const handleOptionsPress = () => {
+    const isOwner = clubDetails?.owner_id === currentUserId;
+    if (isOwner) {
+      Alert.alert('Club Options', null, [
+        { text: 'Edit Club', onPress: () => setShowEditModal(true) },
+        { text: 'Delete Club', style: 'destructive', onPress: handleDeleteClub },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    } else {
+      Alert.alert('Club Options', null, [
+        { text: '🚪  Leave Club', style: 'destructive', onPress: handleLeaveClub },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
   const displayName = clubDetails?.name || club?.name || 'Club';
   const currentBook = clubDetails?.currentBook || club?.currentBook;
   const memberCount = members.length;
   const isPublic = clubDetails?.is_public ?? club?.isPublic ?? true;
+  const isOwner = clubDetails?.owner_id === currentUserId;
 
   return (
     <View style={styles.container}>
@@ -227,7 +312,13 @@ export default function ClubDetailScreen({ route, navigation }) {
         )}
 
         <View style={styles.headerInfo}>
-          <Text style={styles.clubName}>{displayName}</Text>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.clubName}>{displayName}</Text>
+            <TouchableOpacity onPress={handleOptionsPress} style={styles.optionsButton}>
+              <Ionicons name="ellipsis-horizontal" size={22} color={colors.secondary} />
+            </TouchableOpacity>
+          </View>
+
           {clubDetails?.description ? (
             <Text style={styles.clubDescription} numberOfLines={2}>
               {clubDetails.description}
@@ -243,6 +334,12 @@ export default function ClubDetailScreen({ route, navigation }) {
               <Ionicons name={isPublic ? 'globe-outline' : 'lock-closed-outline'} size={14} color={colors.secondary} />
               <Text style={styles.statText}>{isPublic ? 'Public' : 'Private'}</Text>
             </View>
+            {isOwner && (
+              <View style={styles.stat}>
+                <Ionicons name="star" size={14} color="#FFD700" />
+                <Text style={styles.statText}>Owner</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.currentBookInfo}>
@@ -320,6 +417,7 @@ export default function ClubDetailScreen({ route, navigation }) {
                   key={member.userId}
                   member={member}
                   isCurrentUser={member.userId === currentUserId}
+                  isOwner={member.userId === clubDetails?.owner_id}
                 />
               ))
             ) : (
@@ -339,6 +437,17 @@ export default function ClubDetailScreen({ route, navigation }) {
         onSuccess={() => {
           setShowNewThreadModal(false);
           fetchThreads();
+        }}
+      />
+
+      {/* Edit Club Modal */}
+      <EditClubModal
+        visible={showEditModal}
+        clubDetails={clubDetails}
+        onClose={() => setShowEditModal(false)}
+        onSuccess={() => {
+          setShowEditModal(false);
+          loadAll();
         }}
       />
     </View>
@@ -377,14 +486,22 @@ function ThreadCard({ thread, onPress }) {
 
 // Member Card
 
-function MemberCard({ member, isCurrentUser }) {
+function MemberCard({ member, isCurrentUser, isOwner }) {
   return (
     <View style={styles.memberCard}>
       <Image source={{ uri: member.avatarUrl }} style={styles.memberAvatar} />
       <View style={styles.memberInfo}>
-        <Text style={styles.memberName}>
-          {member.displayName}{isCurrentUser ? ' (You)' : ''}
-        </Text>
+        <View style={styles.memberNameRow}>
+          <Text style={styles.memberName}>
+            {member.displayName}{isCurrentUser ? ' (You)' : ''}
+          </Text>
+          {isOwner && (
+            <View style={styles.ownerBadge}>
+              <Ionicons name="star" size={10} color="#FFD700" />
+              <Text style={styles.ownerBadgeText}>Owner</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.memberRole}>{member.role}</Text>
       </View>
     </View>
@@ -400,6 +517,134 @@ function EmptyState({ icon, title, message }) {
       <Text style={styles.emptyTitle}>{title}</Text>
       {message ? <Text style={styles.emptyText}>{message}</Text> : null}
     </View>
+  );
+}
+
+// Edit Club Modal
+
+function EditClubModal({ visible, clubDetails, onClose, onSuccess }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [isPublic, setIsPublic] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  // Pre-fill form
+  useEffect(() => {
+    if (visible && clubDetails) {
+      setName(clubDetails.name || '');
+      setDescription(clubDetails.description || '');
+      setIsPublic(clubDetails.is_public ?? true);
+    }
+  }, [visible, clubDetails]);
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      Alert.alert('Missing name', 'Please enter a club name.');
+      return;
+    }
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('clubs')
+        .update({
+          name: name.trim(),
+          description: description.trim() || null,
+          is_public: isPublic,
+        })
+        .eq('id', clubDetails.id);
+      if (error) throw error;
+      Alert.alert('Saved!', 'Club details have been updated.');
+      onSuccess();
+    } catch (error) {
+      console.error('Error updating club:', error);
+      Alert.alert('Error', 'Failed to update club. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Edit Club</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Club Name *</Text>
+              <TextInput
+                style={styles.input}
+                value={name}
+                onChangeText={setName}
+                maxLength={100}
+                placeholder="Club name"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Description</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={4}
+                maxLength={500}
+                placeholder="What's your book club about?"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Privacy</Text>
+              <View style={styles.privacyOptions}>
+                <TouchableOpacity
+                  style={[styles.privacyOption, isPublic && styles.privacyOptionActive]}
+                  onPress={() => setIsPublic(true)}
+                >
+                  <Ionicons
+                    name={isPublic ? 'radio-button-on' : 'radio-button-off'}
+                    size={20}
+                    color={isPublic ? colors.buttonPrimary : colors.secondary}
+                  />
+                  <Text style={styles.privacyOptionText}>Public - Anyone can join</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.privacyOption, !isPublic && styles.privacyOptionActive]}
+                  onPress={() => setIsPublic(false)}
+                >
+                  <Ionicons
+                    name={!isPublic ? 'radio-button-on' : 'radio-button-off'}
+                    size={20}
+                    color={!isPublic ? colors.buttonPrimary : colors.secondary}
+                  />
+                  <Text style={styles.privacyOptionText}>Private - Invite only</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.createButton, loading && styles.buttonDisabled]}
+              onPress={handleSave}
+              disabled={loading}
+            >
+              <Text style={styles.createButtonText}>
+                {loading ? 'Saving...' : 'Save Changes'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -534,7 +779,9 @@ const styles = StyleSheet.create({
   bookCover: { width: 80, height: 120, borderRadius: 8, backgroundColor: colors.background },
   bookCoverPlaceholder: { justifyContent: 'center', alignItems: 'center' },
   headerInfo: { flex: 1, marginLeft: spacing.md },
-  clubName: { fontSize: typography.fontSizes.xl, fontWeight: typography.fontWeights.bold, color: colors.primary, marginBottom: spacing.xs },
+  headerTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
+  clubName: { flex: 1, fontSize: typography.fontSizes.xl, fontWeight: typography.fontWeights.bold, color: colors.primary },
+  optionsButton: { padding: spacing.xs, marginLeft: spacing.sm },
   clubDescription: { fontSize: typography.fontSizes.sm, color: colors.secondary, marginBottom: spacing.sm },
   stats: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.sm },
   stat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -578,7 +825,10 @@ const styles = StyleSheet.create({
   memberCard: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, backgroundColor: colors.surface, borderRadius: 8, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
   memberAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: spacing.md },
   memberInfo: { flex: 1 },
+  memberNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   memberName: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.semibold, color: colors.primary },
+  ownerBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFF8E1', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700' },
+  ownerBadgeText: { fontSize: typography.fontSizes.xs, color: '#B8860B', fontWeight: typography.fontWeights.semibold },
   memberRole: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 2, textTransform: 'capitalize' },
 
   // Empty State
@@ -595,7 +845,12 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: spacing.lg },
   inputLabel: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.medium, color: colors.primary, marginBottom: spacing.sm },
   input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: spacing.md, fontSize: typography.fontSizes.base, color: colors.primary },
+  textArea: { minHeight: 100, textAlignVertical: 'top' },
   inputHint: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: spacing.xs },
+  privacyOptions: { gap: spacing.sm },
+  privacyOption: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  privacyOptionActive: { borderColor: colors.buttonPrimary, backgroundColor: colors.background },
+  privacyOptionText: { fontSize: typography.fontSizes.base, color: colors.primary },
   modalActions: { flexDirection: 'row', gap: spacing.sm, padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border },
   cancelButton: { flex: 1, paddingVertical: spacing.md, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
   cancelButtonText: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.semibold, color: colors.primary },

@@ -139,7 +139,7 @@ export default function CommunityScreen({ navigation }) {
         .from('clubs')
         .select('id, name, description, book_id, is_public, created_at')
         .eq('is_public', true)
-        .limit(10);
+        .limit(20);
 
       if (error) throw error;
 
@@ -147,7 +147,6 @@ export default function CommunityScreen({ navigation }) {
         club => !userClubIds.includes(club.id)
       );
 
-      
       const clubsWithDetails = [];
       for (const club of filteredClubs) {
         let currentBook = {
@@ -187,6 +186,9 @@ export default function CommunityScreen({ navigation }) {
         });
       }
 
+      // Sort by the member count so the most popular clubs appear first
+      clubsWithDetails.sort((a, b) => b.memberCount - a.memberCount);
+
       setDiscoverClubs(clubsWithDetails);
     } catch (error) {
       console.error('Error fetching discover clubs:', error);
@@ -214,7 +216,7 @@ export default function CommunityScreen({ navigation }) {
 
       const { data: existingMember } = await supabase
         .from('club_memberships')
-        .select('id')
+        .select('user_id')
         .eq('club_id', club.id)
         .eq('user_id', user.id)
         .maybeSingle();
@@ -579,7 +581,8 @@ const styles = StyleSheet.create({
   tabTextActive: { color: colors.buttonPrimary, fontWeight: typography.fontWeights.semibold },
   scrollView: { flex: 1 },
   content: { padding: spacing.lg },
-  sectionTitle: { fontSize: typography.fontSizes.xl, fontWeight: typography.fontWeights.semibold, color: colors.primary, marginBottom: spacing.md },
+  sectionTitle: { fontSize: typography.fontSizes.xl, fontWeight: typography.fontWeights.semibold, color: colors.primary, marginBottom: spacing.xs },
+  sectionSubtitle: { fontSize: typography.fontSizes.sm, color: colors.secondary, marginBottom: spacing.md },
   loadingText: { fontSize: typography.fontSizes.base, color: colors.secondary, textAlign: 'center', marginTop: spacing.xxl },
 
   // My Club Card
