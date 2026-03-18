@@ -15,7 +15,8 @@ import LoginScreen from './screens/LoginScreen';
 import ReadingStatsScreen from './screens/ReadingStatsScreen';
 import ReadingViewScreen from './screens/ReadingViewScreen';
 import ReaderScreen from "./screens/readerScreen";
-
+import ClubDetailScreen from './screens/ClubDetailScreen';
+import DiscussionThreadScreen from './screens/DiscussionThreadScreen';
 
 import theme from './theme';
 const colors = theme.colors;
@@ -139,6 +140,35 @@ function ProfileStack() {
   );
 }
 
+// Community Stack - CommunityScreen -> ClubDetailScreen -> DiscussionThreadScreen
+function CommunityStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Community" component={CommunityScreen} />
+      <Stack.Screen
+        name="ClubDetail"
+        component={ClubDetailScreen}
+        options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: colors.navBackground },
+          headerTintColor: colors.navText,
+          headerTitle: 'Book Club',
+        }}
+      />
+      <Stack.Screen
+        name="DiscussionThread"
+        component={DiscussionThreadScreen}
+        options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: colors.navBackground },
+          headerTintColor: colors.navText,
+          headerTitle: 'Discussion',
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
 function DrawerNavigator() {
   return (
     <Drawer.Navigator
@@ -175,10 +205,9 @@ function DrawerNavigator() {
         }}
       />
 
-  
       <Drawer.Screen
         name="Search"
-        component={BooksPage}
+        component={SearchStack}
         options={{
           drawerLabel: 'Search Books',
           title: 'Search',
@@ -191,11 +220,10 @@ function DrawerNavigator() {
           ),
         }}
       />
-      
-    
+
       <Drawer.Screen
         name="MyBooks"
-        component={MyBooksScreen}
+        component={MyBooksStack}
         options={{
           drawerLabel: 'My Books',
           title: 'My Books',
@@ -211,9 +239,10 @@ function DrawerNavigator() {
 
       <Drawer.Screen
         name="Community"
-        component={CommunityScreen}
+        component={CommunityStack}
         options={{
           drawerLabel: 'Community',
+          title: 'Community',
           drawerIcon: ({ focused, color, size }) => (
             <Ionicons
               name={focused ? 'people' : 'people-outline'}
@@ -223,10 +252,10 @@ function DrawerNavigator() {
           ),
         }}
       />
-      
-      <Drawer.Screen 
+
+      <Drawer.Screen
         name="Profile"
-        component={ProfileScreen}
+        component={ProfileStack}
         options={{
           drawerLabel: 'User Profile',
           title: 'User Profile',
@@ -243,7 +272,7 @@ function DrawerNavigator() {
   );
 }
 
-// Make Login the first screen, the direct user to Home (drawer) once login
+// Make Login the first screen, then direct user to Home (drawer) once login
 
 export default function App() {
   return (
@@ -253,7 +282,7 @@ export default function App() {
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Home" component={DrawerNavigator} />
 
-    
+
           <Stack.Screen name="Reader" component={ReaderScreen} />
         </Stack.Navigator>
       </NavigationContainer>
