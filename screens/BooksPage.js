@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigation } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -14,7 +15,7 @@ import {
 import { WebView } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import theme from "../theme";
-import { supabase } from "../Fenoon/lsupabase";
+import { supabase } from "../lib/supabase";
 
 const { colors, typography, spacing } = theme;
 const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY;
@@ -38,7 +39,47 @@ function pickPreviewUrl(book) {
   return book?.webReaderLink || book?.previewLink || null;
 }
 
-// ---------------- GOOGLE BOOKS (search + preview) ----------------
+// guttenberg search (public domain books with full text available)
+async function gutendexSearch(query) {
+  const url = "https://gutendex.com/books?search=" + encodeURIComponent(query);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Gutendex search failed");
+  const data = await res.json();
+
+  return (data?.results ?? []).slice(0, 12).map((b) => {
+    const author = b.authors?.[0]?.name ?? "Unknown author";
+    const cover = normalizeCover(b.formats?.["image/jpeg"]);
+
+    //pull out text 
+    const htmlUrl =
+      b.formats?.["text/html; charset=utf-8"] ||
+      b.formats?.["text/html"] ||
+      null;
+
+    const textUrl =
+  b.formats?.["text/plain; charset=utf-8"] ||
+  b.formats?.["text/plain"] ||
+  null;
+
+return {
+  id: String(b.id),
+  source: "gutenberg",
+  title: b.title ?? "Untitled",
+  author,
+  cover,
+  pages: 0,
+  rating: null,
+  ratingsCount: 0,
+  isbn: null,
+  previewLink: null,
+  webReaderLink: null,
+
+  textUrl,
+};
+  });
+}
+
+// google books search (preview available)
 function toBookCardGoogle(item) {
   const info = item.volumeInfo || {};
   const access = item.accessInfo || {};
@@ -53,7 +94,6 @@ function toBookCardGoogle(item) {
     info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail
   );
 
-  // Prefer industryIdentifiers for ISBN (kept for completeness)
   let isbn = null;
   const ids = info.industryIdentifiers;
   if (Array.isArray(ids) && ids.length) {
@@ -70,7 +110,7 @@ function toBookCardGoogle(item) {
     cover,
     pages: info.pageCount ?? 0,
     rating: typeof info.averageRating === "number" ? info.averageRating : null,
-    ratingsCount: typeof info.ratingsCount === "number" ? info.ratingsCount : 0,
+    //ratingsCount: typeof info.ratingsCount === "number" ? info.ratingsCount : 0,
     isbn,
     previewLink: info.previewLink ?? null,
     webReaderLink: access.webReaderLink ?? null,
@@ -79,7 +119,9 @@ function toBookCardGoogle(item) {
 
 async function googleBooksSearch(query) {
   if (!API_KEY) {
-    throw new Error("Missing EXPO_PUBLIC_GOOGLE_BOOKS_KEY (restart Expo after setting)");
+    throw new Error(
+      "Missing EXPO_PUBLIC_GOOGLE_BOOKS_KEY (restart Expo after setting)"
+    );
   }
 
   const url =
@@ -99,11 +141,10 @@ async function googleBooksSearch(query) {
   return (data?.items ?? []).map(toBookCardGoogle);
 }
 
-// For dataset items: find a Google preview by searching title+author (or isbn if you have it)
+
 async function googlePreviewForDatasetBook({ title, author, isbn }) {
   if (!title) return null;
 
-  // Try ISBN first if present
   if (isbn) {
     try {
       const items = await googleBooksSearch(`isbn:${isbn}`);
@@ -111,12 +152,9 @@ async function googlePreviewForDatasetBook({ title, author, isbn }) {
         const url = pickPreviewUrl(b);
         if (url) return url;
       }
-    } catch {
-      // ignore and fallback
-    }
+    } catch {}
   }
 
-  // fallback to title + author
   const q = author ? `intitle:${title} inauthor:${author}` : `intitle:${title}`;
   const items = await googleBooksSearch(q);
 
@@ -128,23 +166,19 @@ async function googlePreviewForDatasetBook({ title, author, isbn }) {
   return pickPreviewUrl(items[0]) || null;
 }
 
-// ---------------- SUPABASE DATASET (categories) ----------------
+//SUPABASE DATASET 
 function cleanAuthor(author) {
   if (!author) return "Unknown author";
-
   const s = String(author).trim();
 
-  // match patterns like: "'name': 'Suzanne Collins'"
   const m = s.match(/'name'\s*:\s*'([^']+)'/);
   if (m?.[1]) return m[1];
 
-  // try JSON
   try {
     const obj = JSON.parse(s);
     if (obj?.name) return String(obj.name);
   } catch {}
 
-  // fallback: return the string
   return s;
 }
 
@@ -157,7 +191,7 @@ function toBookCardDataset(row) {
     cover: normalizeCover(row.cover_url),
     pages: row.pages ?? 0,
     rating: typeof row.average_rating === "number" ? row.average_rating : null,
-    ratingsCount: row.ratings_count ?? 0,
+    //ratingsCount: row.ratings_count ?? 0,
     isbn: row.isbn ?? null,
     genres: row.genres_clean ?? row.genres ?? null,
     previewLink: null,
@@ -166,12 +200,12 @@ function toBookCardDataset(row) {
 }
 
 async function fetchCategoryBooks(catKey) {
-  // expects genres_clean text[] exists (you created it). If not, change to .filter("genres::text", "ilike", ...)
   const { data, error } = await supabase
     .from("goodreads_books")
-    .select("id,title,author,cover_url,pages,average_rating,ratings_count,genres_clean,isbn")
+    .select(
+      "id,title,author,cover_url,pages,average_rating,genres_clean,isbn"
+    )
     .contains("genres_clean", [catKey])
-    .order("ratings_count", { ascending: false })
     .limit(12);
 
   if (error) throw error;
@@ -185,64 +219,15 @@ function formatCount(n) {
   return `${x}`;
 }
 
-// ---------------- helpers for saving ----------------
-async function requireUser() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  if (!data?.user) throw new Error("Not signed in");
-  return data.user;
-}
-
-// Upsert into canonical books table and return id
-async function upsertBookRowFromCard(b) {
-  const sourceKey = `${b.source}:${b.id}`;
-  const bookRow = {
-    source_key: sourceKey,
-    title: b.title,
-    author: b.author,
-    cover_url: b.cover,
-    pages: b.pages || null,
-    average_rating: b.rating || null,
-    ratings_count: b.ratingsCount || null,
-    isbn: b.isbn || null,
-  };
-
-  const { data, error } = await supabase
-    .from("books")
-    .upsert(bookRow, { onConflict: "source_key" })
-    .select("id")
-    .single();
-
-  if (error) throw error;
-  return data.id;
-}
-
-async function saveBookForUser(userId, bookId) {
-  const { error } = await supabase.from("saved_books").insert({ user_id: userId, book_id: bookId });
-  if (error && error.code !== "23505") throw error;
-}
-
-async function unsaveBookForUser(userId, bookId) {
-  const { error } = await supabase
-    .from("saved_books")
-    .delete()
-    .eq("user_id", userId)
-    .eq("book_id", bookId);
-
-  if (error) throw error;
-}
-
 // ---------------- UI COMPONENT ----------------
 function SectionRow({
   title,
   books,
   loading,
   error,
-  onSeeAll,
   onPressBook,
   onBeginReading,
   listKey = "list",
-  // new props:
   savedSet = new Set(),
   onToggleSave,
 }) {
@@ -250,9 +235,6 @@ function SectionRow({
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{title}</Text>
-        <TouchableOpacity onPress={onSeeAll} disabled={!books?.length}>
-          <Text style={[styles.seeAllText, !books?.length && { opacity: 0.4 }]}>See All</Text>
-        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -263,9 +245,19 @@ function SectionRow({
       ) : error ? (
         <Text style={styles.errorText}>{error}</Text>
       ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.horizontalScroll}
+        >
           {books.map((b, idx) => {
-            const key = b.source === "google" ? b.id : `dataset:${b.id}`;
+            const key =
+              b.source === "google"
+                ? b.id
+                : b.source === "gutenberg"
+                ? `gutenberg:${b.id}`
+                : `dataset:${b.id}`;
+
             const isSaved = savedSet.has(key);
 
             return (
@@ -275,15 +267,13 @@ function SectionRow({
                 onPress={() => onPressBook?.(b)}
                 activeOpacity={0.85}
               >
-                {/* cover wrapper so icon can be absolute */}
                 <View style={{ position: "relative" }}>
                   <Image source={{ uri: b.cover }} style={styles.bookCover} />
 
-                  {/* Heart icon */}
                   <TouchableOpacity
                     onPress={(e) => {
-                      // prevent card onPress when tapping heart (best-effort)
-                      if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+                      if (e && typeof e.stopPropagation === "function")
+                        e.stopPropagation();
                       onToggleSave?.(b);
                     }}
                     style={styles.saveIcon}
@@ -325,7 +315,10 @@ function SectionRow({
                     )}
                   </View>
 
-                  <TouchableOpacity style={styles.beginBtn} onPress={() => onBeginReading?.(b)}>
+                  <TouchableOpacity
+                    style={styles.beginBtn}
+                    onPress={() => onBeginReading?.(b)}
+                  >
                     <Text style={styles.beginBtnText}>Begin Reading</Text>
                   </TouchableOpacity>
                 </View>
@@ -339,13 +332,17 @@ function SectionRow({
 }
 
 export default function BooksPage() {
+  const navigation = useNavigation();
+  const [pdBooks, setPdBooks] = useState([]);
+  const [googleSearchBooks, setGoogleSearchBooks] = useState([]);
+
   const [previewUrl, setPreviewUrl] = useState(null);
   const [savedSet, setSavedSet] = useState(new Set());
 
   const [query, setQuery] = useState("");
   const hasSearch = useMemo(() => query.trim().length > 0, [query]);
 
-  // Search results (Google)
+  // Search results (Google + Gutenberg)
   const [searchBooks, setSearchBooks] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -395,125 +392,130 @@ export default function BooksPage() {
   }, []);
 
   // Load saved keys for current user
- useEffect(() => {
-  let mounted = true;
+  useEffect(() => {
+    let mounted = true;
 
-  (async () => {
-    try {
-      const { data: auth } = await supabase.auth.getUser();
-      const user = auth?.user;
-      if (!user) return;
+    (async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth?.user;
+        if (!user) return;
 
-      const { data, error } = await supabase
-        .from("saved_books")
-        .select("book_id, books:book_id (google_volume_id)")
-        .eq("user_id", user.id);
+        const { data, error } = await supabase
+          .from("saved_books")
+          .select("book_id, books:book_id (google_volume_id)")
+          .eq("user_id", user.id);
 
-      if (error) throw error;
+        if (error) throw error;
 
-      const keys = new Set(
-        (data ?? [])
-          .map((r) => r.books?.google_volume_id)
-          .filter(Boolean)
-      );
+        const keys = new Set(
+          (data ?? [])
+            .map((r) => r.books?.google_volume_id)
+            .filter(Boolean)
+        );
 
-      if (mounted) setSavedSet(keys);
-    } catch (e) {
-      console.log("Load saved error:", e?.message);
-    }
-  })();
+        if (mounted) setSavedSet(keys);
+      } catch (e) {
+        console.log("Load saved error:", e?.message);
+      }
+    })();
 
-  return () => {
-    mounted = false;
-  };
-}, []);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const onSearch = async () => {
-    const q = query.trim();
-    if (!q) return;
+  const q = query.trim();
+  if (!q) return;
 
-    try {
-      setSearchLoading(true);
-      setSearchError("");
-      setSearchBooks([]);
-
-      const items = await googleBooksSearch(q);
-      setSearchBooks(items);
-    } catch (e) {
-      setSearchError(e?.message ?? "Search failed");
-    } finally {
-      setSearchLoading(false);
-    }
-  };
-
-const onToggleSave = async (b) => {
   try {
-    const { data: authData, error: authErr } = await supabase.auth.getUser();
-    if (authErr) throw authErr;
+    setSearchLoading(true);
+    setSearchError("");
+    setPdBooks([]);
+    setGoogleSearchBooks([]);
 
-    const user = authData?.user;
-    if (!user) {
-      Alert.alert("Not signed in", "Please sign in to save books.");
-      return;
-    }
+    const [gutenbergItems, googleItems] = await Promise.all([
+      gutendexSearch(q),
+      googleBooksSearch(q),
+    ]);
 
-    // We need a stable key in books table.
-    // Your existing schema uses google_volume_id, so:
-    // - google results: use b.id
-    // - dataset results: use "dataset:<id>" (still fits in google_volume_id text column)
-    const googleVolumeId = b.source === "google" ? b.id : `dataset:${b.id}`;
-    const alreadySaved = savedSet.has(googleVolumeId);
-
-    // optimistic UI
-    if (alreadySaved) {
-      setSavedSet((prev) => {
-        const next = new Set(prev);
-        next.delete(googleVolumeId);
-        return next;
-      });
-    } else {
-      setSavedSet((prev) => new Set(prev).add(googleVolumeId));
-    }
-
-    // 1) upsert into books using YOUR real columns
-    const bookRow = {
-      google_volume_id: googleVolumeId,
-      title: b.title,
-      authors: b.author && b.author !== "Unknown author" ? [b.author] : null,
-      cover_url: b.cover,
-      page_count: b.pages || null,
-      // epub_path stays null unless you later attach it
-    };
-
-    const { data: bookData, error: bookErr } = await supabase
-      .from("books")
-      .upsert(bookRow, { onConflict: "google_volume_id" })
-      .select("id")
-      .single();
-
-    if (bookErr) throw bookErr;
-
-    // 2) toggle link in saved_books
-    if (alreadySaved) {
-      const { error: delErr } = await supabase
-        .from("saved_books")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("book_id", bookData.id);
-
-      if (delErr) throw delErr;
-    } else {
-      const { error: linkErr } = await supabase
-        .from("saved_books")
-        .insert({ user_id: user.id, book_id: bookData.id });
-
-      // ignore duplicates
-      if (linkErr && linkErr.code !== "23505") throw linkErr;
-    }
+    setPdBooks(gutenbergItems);
+    setGoogleSearchBooks(googleItems);
   } catch (e) {
-    Alert.alert("Save failed", e?.message ?? "Unknown error");
+    setSearchError(e?.message ?? "Search failed");
+  } finally {
+    setSearchLoading(false);
   }
 };
+
+  const onToggleSave = async (b) => {
+    try {
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+
+      const user = authData?.user;
+      if (!user) {
+        Alert.alert("Not signed in", "Please sign in to save books.");
+        return;
+      }
+
+    
+      const googleVolumeId =
+        b.source === "google"
+          ? b.id
+          : b.source === "gutenberg"
+          ? `gutenberg:${b.id}`
+          : `dataset:${b.id}`;
+
+      const alreadySaved = savedSet.has(googleVolumeId);
+
+      // optimistic UI
+      if (alreadySaved) {
+        setSavedSet((prev) => {
+          const next = new Set(prev);
+          next.delete(googleVolumeId);
+          return next;
+        });
+      } else {
+        setSavedSet((prev) => new Set(prev).add(googleVolumeId));
+      }
+
+      const bookRow = {
+        google_volume_id: googleVolumeId,
+        title: b.title,
+        authors: b.author && b.author !== "Unknown author" ? [b.author] : null,
+        cover_url: b.cover,
+        page_count: b.pages || null,
+      };
+
+      const { data: bookData, error: bookErr } = await supabase
+        .from("books")
+        .upsert(bookRow, { onConflict: "google_volume_id" })
+        .select("id")
+        .single();
+
+      if (bookErr) throw bookErr;
+
+      if (alreadySaved) {
+        const { error: delErr } = await supabase
+          .from("saved_books")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("book_id", bookData.id);
+
+        if (delErr) throw delErr;
+      } else {
+        const { error: linkErr } = await supabase
+          .from("saved_books")
+          .insert({ user_id: user.id, book_id: bookData.id });
+
+        if (linkErr && linkErr.code !== "23505") throw linkErr;
+      }
+    } catch (e) {
+      Alert.alert("Save failed", e?.message ?? "Unknown error");
+    }
+  };
 
   const onPressBook = async (book) => {
     if (book.source === "google") {
@@ -523,11 +525,31 @@ const onToggleSave = async (b) => {
       return;
     }
 
-    Alert.alert("Preview", "Tap Begin Reading to open the preview.");
+    if (book.source === "gutenberg") {
+      //Alert.alert("Public domain", "Tap Begin Reading to open the full book.");
+      return;
+    }
+
+    //Alert.alert("Preview", "Tap Begin Reading to open the preview.");
   };
 
   const onBeginReading = async (b) => {
     try {
+      // PUBLIC DOMAIN (Gutenberg)
+     if (b.source === "gutenberg") {
+  if (!b.textUrl) {
+    Alert.alert("Not available", "No text format for this book.");
+    return;
+  }
+
+  navigation.navigate("Reader", {
+  book: { ...b, source: "gutenberg", externalId: b.id },
+  url: b.textUrl,
+});
+  return;
+}
+
+      //  GOOGLE
       if (b.source === "google") {
         const url = pickPreviewUrl(b);
         if (!url) return Alert.alert("No preview available");
@@ -535,6 +557,7 @@ const onToggleSave = async (b) => {
         return;
       }
 
+      //  DATASET
       const url = await googlePreviewForDatasetBook({
         title: b.title,
         author: b.author,
@@ -556,8 +579,8 @@ const onToggleSave = async (b) => {
     <>
       <ScrollView style={styles.container}>
         <View style={styles.content}>
-          <Text style={styles.title}>Books</Text>
-          <Text style={styles.subtitle}>Search (Google) + Categories (Dataset)</Text>
+          
+          <Text style={styles.subtitle}>Search Books </Text>
 
           <View style={styles.searchRow}>
             <Ionicons name="search-outline" size={18} color={colors.secondary} />
@@ -575,19 +598,33 @@ const onToggleSave = async (b) => {
             </TouchableOpacity>
           </View>
 
-          {(searchLoading || searchError || searchBooks.length > 0) && (
-            <SectionRow
-              title="Search Results"
-              books={searchBooks}
-              loading={searchLoading}
-              error={searchError}
-              onPressBook={onPressBook}
-              onBeginReading={onBeginReading}
-              listKey="search"
-              savedSet={savedSet}
-              onToggleSave={onToggleSave}
-            />
-          )}
+          {(searchLoading || searchError || pdBooks.length > 0 || googleSearchBooks.length > 0) && (
+  <>
+    <SectionRow
+      title="Books with full text available"
+      books={pdBooks}
+      loading={searchLoading}
+      error={searchError}
+      onPressBook={onPressBook}
+      onBeginReading={onBeginReading}
+      listKey="pd"
+      savedSet={savedSet}
+      onToggleSave={onToggleSave}
+    />
+
+    <SectionRow
+      title="More search results"
+      books={googleSearchBooks}
+      loading={false}
+      error={""}
+      onPressBook={onPressBook}
+      onBeginReading={onBeginReading}
+      listKey="google"
+      savedSet={savedSet}
+      onToggleSave={onToggleSave}
+    />
+  </>
+)}
 
           {CATEGORIES.map((cat) => (
             <SectionRow
@@ -706,12 +743,6 @@ const styles = StyleSheet.create({
   bookCover: { width: "100%", height: 220, backgroundColor: colors.surface },
 
   cardBody: { padding: spacing.md, flexDirection: "column", height: 190 },
-
-  isbnText: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
-    marginBottom: 6,
-  },
 
   cardTitle: {
     fontSize: typography.fontSizes.sm,
