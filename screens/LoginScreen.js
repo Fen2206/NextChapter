@@ -9,52 +9,44 @@ import {
   Platform,
   ScrollView,
   Image,
+  Keyboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
-  const [currentView, setCurrentView] = useState('choice'); // 'choice', 'login', 'register'
-  const [loginForm, setLoginForm] = useState({
-    email: '',
-    password: '',
-  });
-  const [registerForm, setRegisterForm] = useState({
-    username: '',
-    email: '',
-    password: '',
-    confirm: '',
-  });
+  const [currentView, setCurrentView] = useState('choice'); // 'choice', 'login', 'register', 'forgotEmail', 'forgotOTP', 'forgotNewPassword'
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({ username: '', email: '', password: '', confirm: '' });
+
+  // forgot password state
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOTP, setForgotOTP] = useState('');
+
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const navigation = useNavigation();
 
-  const onLoginChange = (name, value) => {
-    setLoginForm((f) => ({ ...f, [name]: value }));
-  };
-
-  const onRegisterChange = (name, value) => {
-    setRegisterForm((f) => ({ ...f, [name]: value }));
-  };
+  const onLoginChange = (name, value) => setLoginForm((f) => ({ ...f, [name]: value }));
+  const onRegisterChange = (name, value) => setRegisterForm((f) => ({ ...f, [name]: value }));
 
   const resetForms = () => {
     setLoginForm({ email: '', password: '' });
     setRegisterForm({ username: '', email: '', password: '', confirm: '' });
+    setForgotEmail('');
+    setForgotOTP('');
     setError('');
   };
 
   const handleLogin = async () => {
     setError('');
     setPending(true);
-
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: loginForm.email,
         password: loginForm.password,
       });
-
       if (error) throw error;
-
       navigation.replace('Home');
     } catch (err) {
       setError(err.message || 'Login failed');
@@ -66,7 +58,6 @@ export default function LoginScreen() {
   const handleRegister = async () => {
     setError('');
     setPending(true);
-
     try {
       if (!registerForm.username || !registerForm.email || !registerForm.password) {
         throw new Error('Please fill out all fields');
@@ -89,7 +80,6 @@ export default function LoginScreen() {
         email: registerForm.email,
         password: registerForm.password,
       });
-
       if (signUpError) throw signUpError;
 
       // 2. Update profile with username (trigger already created the row)
@@ -100,10 +90,10 @@ export default function LoginScreen() {
           display_name: registerForm.username,
         })
         .eq('id', data.user.id);
-
       if (profileError) throw profileError;
 
-      navigation.replace('Home');
+      // 3. Send new users to onboarding survey
+      navigation.replace('Survey');
     } catch (err) {
       setError(err.message || 'Sign up failed');
     } finally {
@@ -111,36 +101,73 @@ export default function LoginScreen() {
     }
   };
 
-  // Login or Register Screen
+  // step 1 — send OTP code to email
+  const handleSendOTP = async () => {
+    setError('');
+    if (!forgotEmail.trim()) {
+      setError('Please enter your email address.');
+      return;
+    }
+    setPending(true);
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: forgotEmail.trim(),
+        options: {
+          shouldCreateUser: false,
+          emailRedirectTo: null, // forces OTP code instead of magic link
+        },
+      });
+      if (error) throw error;
+      setCurrentView('forgotOTP');
+    } catch (err) {
+      setError(err.message || 'Could not send code. Check your email and try again.');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  // step 2 — verify OTP code
+  const handleVerifyOTP = async () => {
+    setError('');
+    if (!forgotOTP.trim() || forgotOTP.length < 6) {
+      setError('Please enter the 6-digit code from your email.');
+      return;
+    }
+    setPending(true);
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email: forgotEmail.trim(),
+        token: forgotOTP.trim(),
+        type: 'email',
+      });
+      if (error) throw error;
+      navigation.navigate('NewPassword');
+    } catch (err) {
+      setError(err.message || 'Invalid or expired code. Try again.');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  // step 3 — set new password
+
+  // ─── Choice Screen ──
   if (currentView === 'choice') {
     return (
       <View style={styles.container}>
-        <Image
-          source={require('../assets/next-chapter-logo.png')}
-          style={styles.logoTopLeft}
-          resizeMode="contain"
-        />
-
+        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Welcome to</Text>
           <Text style={styles.appName}>Next Chapter</Text>
           <Text style={styles.tagline}>Read. Discover. Connect.</Text>
         </View>
-
         <View style={styles.choiceContainer}>
           <View style={styles.choiceCard}>
-            <TouchableOpacity
-              style={styles.primaryChoice}
-              onPress={() => setCurrentView('register')}
-            >
+            <TouchableOpacity style={styles.primaryChoice} onPress={() => setCurrentView('register')}>
               <Text style={styles.primaryChoiceText}>I'm New Here</Text>
               <Text style={styles.primaryChoiceSubtext}>Create an account</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryChoice}
-              onPress={() => setCurrentView('login')}
-            >
+            <TouchableOpacity style={styles.secondaryChoice} onPress={() => setCurrentView('login')}>
               <Text style={styles.secondaryChoiceText}>I Have an Account</Text>
               <Text style={styles.secondaryChoiceSubtext}>Sign in to continue</Text>
             </TouchableOpacity>
@@ -150,23 +177,12 @@ export default function LoginScreen() {
     );
   }
 
-  // Login Form
+  // ─── Login Form ───
   if (currentView === 'login') {
     return (
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
-        <Image
-          source={require('../assets/next-chapter-logo.png')}
-          style={styles.logoTopLeft}
-          resizeMode="contain"
-        />
-
-        <ScrollView
-          contentContainerStyle={styles.scrollContentForm}
-          keyboardShouldPersistTaps="handled"
-        >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
+        <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
           <View style={styles.formCard}>
             <Text style={styles.title}>Welcome Back!</Text>
             <Text style={styles.subtitle}>Sign in to continue reading</Text>
@@ -176,7 +192,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={loginForm.email}
-                onChangeText={(value) => onLoginChange('email', value)}
+                onChangeText={(v) => onLoginChange('email', v)}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
@@ -190,7 +206,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={loginForm.password}
-                onChangeText={(value) => onLoginChange('password', value)}
+                onChangeText={(v) => onLoginChange('password', v)}
                 secureTextEntry
                 autoCapitalize="none"
                 placeholder="Enter password"
@@ -198,20 +214,17 @@ export default function LoginScreen() {
               />
             </View>
 
-            <TouchableOpacity style={styles.forgotPassword}>
+            <TouchableOpacity
+              style={styles.forgotPassword}
+              onPress={() => { resetForms(); setCurrentView('forgotEmail'); }}
+            >
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            <TouchableOpacity
-              style={[styles.button, pending && styles.buttonDisabled]}
-              onPress={handleLogin}
-              disabled={pending}
-            >
-              <Text style={styles.buttonText}>
-                {pending ? 'Signing in...' : 'Sign In'}
-              </Text>
+            <TouchableOpacity style={[styles.button, pending && styles.buttonDisabled]} onPress={handleLogin} disabled={pending}>
+              <Text style={styles.buttonText}>{pending ? 'Signing in...' : 'Sign In'}</Text>
             </TouchableOpacity>
 
             <View style={styles.footer}>
@@ -226,23 +239,12 @@ export default function LoginScreen() {
     );
   }
 
-  // Register Form
+  // ─── Register Form ────
   if (currentView === 'register') {
     return (
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
-        <Image
-          source={require('../assets/next-chapter-logo.png')}
-          style={styles.logoTopLeft}
-          resizeMode="contain"
-        />
-
-        <ScrollView
-          contentContainerStyle={styles.scrollContentForm}
-          keyboardShouldPersistTaps="handled"
-        >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
+        <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
           <View style={styles.formCard}>
             <Text style={styles.title}>New Reader?</Text>
             <Text style={styles.subtitle}>Join the Next Chapter Community!</Text>
@@ -252,7 +254,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={registerForm.username}
-                onChangeText={(value) => onRegisterChange('username', value)}
+                onChangeText={(v) => onRegisterChange('username', v)}
                 autoCapitalize="words"
                 autoCorrect={false}
                 placeholder="Enter your name"
@@ -265,7 +267,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={registerForm.email}
-                onChangeText={(value) => onRegisterChange('email', value)}
+                onChangeText={(v) => onRegisterChange('email', v)}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
@@ -279,7 +281,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={registerForm.password}
-                onChangeText={(value) => onRegisterChange('password', value)}
+                onChangeText={(v) => onRegisterChange('password', v)}
                 secureTextEntry
                 autoCapitalize="none"
                 placeholder="Password"
@@ -292,7 +294,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={registerForm.confirm}
-                onChangeText={(value) => onRegisterChange('confirm', value)}
+                onChangeText={(v) => onRegisterChange('confirm', v)}
                 secureTextEntry
                 autoCapitalize="none"
                 placeholder="Confirm password"
@@ -302,14 +304,8 @@ export default function LoginScreen() {
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            <TouchableOpacity
-              style={[styles.button, pending && styles.buttonDisabled]}
-              onPress={handleRegister}
-              disabled={pending}
-            >
-              <Text style={styles.buttonText}>
-                {pending ? 'Creating account...' : 'Create Account'}
-              </Text>
+            <TouchableOpacity style={[styles.button, pending && styles.buttonDisabled]} onPress={handleRegister} disabled={pending}>
+              <Text style={styles.buttonText}>{pending ? 'Creating account...' : 'Create Account'}</Text>
             </TouchableOpacity>
 
             <View style={styles.footer}>
@@ -323,8 +319,99 @@ export default function LoginScreen() {
       </KeyboardAvoidingView>
     );
   }
+
+  // ─── Forgot Password: Step 1 — Enter Email ────
+  if (currentView === 'forgotEmail') {
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
+        <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
+          <View style={styles.formCard}>
+            <Text style={styles.title}>Forgot Password?</Text>
+            <Text style={styles.subtitle}>Enter your email and we'll send you a 6-digit code</Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                value={forgotEmail}
+                onChangeText={setForgotEmail}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                placeholder="Enter your email"
+                placeholderTextColor="#999"
+              />
+            </View>
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <TouchableOpacity style={[styles.button, pending && styles.buttonDisabled]} onPress={handleSendOTP} disabled={pending}>
+              <Text style={styles.buttonText}>{pending ? 'Sending...' : 'Send Code'}</Text>
+            </TouchableOpacity>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Remember your password? </Text>
+              <TouchableOpacity onPress={() => { resetForms(); setCurrentView('login'); }}>
+                <Text style={styles.link}>Sign in</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  // ─── Forgot Password: Step 2 — Enter OTP Code ───
+  if (currentView === 'forgotOTP') {
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
+        <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
+          <View style={styles.formCard}>
+            <Text style={styles.title}>Check Your Email</Text>
+            <Text style={styles.subtitle}>
+              We sent a 6-digit code to{'\n'}
+              <Text style={styles.emailHighlight}>{forgotEmail}</Text>
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>6-Digit Code</Text>
+              <TextInput
+                style={[styles.input, styles.otpInput]}
+                value={forgotOTP}
+                onChangeText={setForgotOTP}
+                keyboardType="number-pad"
+                maxLength={6}
+                placeholder="000000"
+                placeholderTextColor="#999"
+              />
+            </View>
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <TouchableOpacity style={[styles.button, pending && styles.buttonDisabled]} onPress={handleVerifyOTP} disabled={pending}>
+              <Text style={styles.buttonText}>{pending ? 'Verifying...' : 'Verify Code'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.resendButton} onPress={handleSendOTP} disabled={pending}>
+              <Text style={styles.resendText}>Didn't get a code? Resend</Text>
+            </TouchableOpacity>
+
+            <View style={styles.footer}>
+              <TouchableOpacity onPress={() => { setCurrentView('forgotEmail'); setError(''); }}>
+                <Text style={styles.link}>← Change email</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
 }
-//Kindle style layout
+
+// Kindle style layout
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -454,6 +541,10 @@ const styles = StyleSheet.create({
     marginBottom: 25,
     textAlign: 'center',
   },
+  emailHighlight: {
+    fontWeight: '600',
+    color: '#2C2C2C',
+  },
   inputGroup: {
     marginBottom: 18,
   },
@@ -471,6 +562,19 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 15,
     color: '#2C2C2C',
+    letterSpacing: 0,
+  },
+  otpInput: {
+    fontSize: 24,
+    letterSpacing: 8,
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  hint: {
+    fontSize: 12,
+    color: '#999999',
+    marginBottom: 12,
+    lineHeight: 18,
   },
   button: {
     backgroundColor: '#4A4A4A',
@@ -501,6 +605,15 @@ const styles = StyleSheet.create({
     color: '#4A4A4A',
     fontSize: 13,
   },
+  resendButton: {
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  resendText: {
+    color: '#4A4A4A',
+    fontSize: 13,
+    textDecorationLine: 'underline',
+  },
   error: {
     color: '#F44336',
     backgroundColor: '#FFE5E9',
@@ -525,5 +638,28 @@ const styles = StyleSheet.create({
     color: '#4A4A4A',
     fontSize: 13,
     fontWeight: '600',
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1,
+    borderColor: '#CCCCCC',
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 12,
+    fontSize: 15,
+    color: '#2C2C2C',
+    letterSpacing: 0,
+  },
+  eyeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  eyeText: {
+    fontSize: 13,
+    color: '#4A4A4A',
+    fontWeight: '500',
   },
 });

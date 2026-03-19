@@ -154,7 +154,23 @@ export default function SettingsScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Account Information — real user?.email and user?.joinDate */}
+      {/* Reading Preferences */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Reading Preferences</Text>
+        <TouchableOpacity
+          style={styles.surveyButton}
+          onPress={() => navigation.navigate('Survey', { retake: true })}
+        >
+          <Ionicons name="book-outline" size={20} color={colors.buttonPrimary} />
+          <View style={styles.surveyText}>
+            <Text style={styles.surveyLabel}>Update Survey</Text>
+            <Text style={styles.surveySub}>Update your genres, goals & reading habits</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.secondary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Account Information */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account Information</Text>
 
@@ -270,6 +286,25 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.medium,
   },
   toggleSub: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.secondary,
+    marginTop: 2,
+  },
+  surveyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+  },
+  surveyText: {
+    flex: 1,
+  },
+  surveyLabel: {
+    fontSize: typography.fontSizes.base,
+    color: colors.primary,
+    fontWeight: typography.fontWeights.medium,
+  },
+  surveySub: {
     fontSize: typography.fontSizes.xs,
     color: colors.secondary,
     marginTop: 2,
