@@ -16,7 +16,7 @@ import {
 import { WebView } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import theme from "../theme";
-import { supabase } from "../Fenoon/lsupabase";
+import { supabase } from "../lib/supabase";
 
 const { colors, typography, spacing } = theme;
 const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY;

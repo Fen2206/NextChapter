@@ -15,11 +15,11 @@ export default function ProfileScreen({ navigation }) {
     totalAnnotations: 0,
   });
 
-  // saved books state
+  // keep saved books state
   const [savedBooks, setSavedBooks] = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
 
-  // saved books fetch
+  // keep saved books fetch
   const fetchSavedBooks = useCallback(async () => {
     try {
       setLoadingSaved(true);
@@ -114,16 +114,22 @@ export default function ProfileScreen({ navigation }) {
     navigation.navigate('Settings');
   };
 
+  const handleViewAllStats = () => {
+    navigation.navigate('ReadingStats');
+  };
+
   const StatCard = ({ icon, label, value, color = colors.primary }) => (
     <View style={styles.statCard}>
-      <Ionicons name={icon} size={24} color={color} />
+      <View style={[styles.statIconContainer, { backgroundColor: `${color}15` }]}>
+        <Ionicons name={icon} size={24} color={color} />
+      </View>
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
       {/* Profile Header */}
       <View style={styles.header}>
@@ -150,12 +156,41 @@ export default function ProfileScreen({ navigation }) {
 
       {/* Reading Stats */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Reading Stats</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Reading Stats</Text>
+          <TouchableOpacity onPress={handleViewAllStats}>
+            <View style={styles.viewAllButton}>
+              <Text style={styles.viewAllText}>View All</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.secondary} />
+            </View>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.statsGrid}>
-          <StatCard icon="book" label="Books Read" value={stats.booksRead} color={colors.buttonPrimary} />
-          <StatCard icon="document-text" label="Pages Read" value={stats.pagesRead.toLocaleString()} color={colors.buttonPrimary} />
-          <StatCard icon="flame" label="Day Streak" value={stats.currentStreak} color="#FF6B35" />
-          <StatCard icon="bookmark" label="Annotations" value={stats.totalAnnotations} color={colors.buttonPrimary} />
+          <StatCard
+            icon="book"
+            label="Books Read"
+            value={stats.booksRead}
+            color={colors.buttonPrimary}
+          />
+          <StatCard
+            icon="document-text"
+            label="Pages Read"
+            value={stats.pagesRead.toLocaleString()}
+            color="#2196F3"
+          />
+          <StatCard
+            icon="flame"
+            label="Day Streak"
+            value={stats.currentStreak}
+            color="#FF6B35"
+          />
+          <StatCard
+            icon="bookmark"
+            label="Annotations"
+            value={stats.totalAnnotations}
+            color="#9C27B0"
+          />
         </View>
       </View>
 
@@ -271,7 +306,7 @@ export default function ProfileScreen({ navigation }) {
             "We all float down here."
           </Text>
           <Text style={styles.annotationNote}>
-            I- what???!!!!
+            I- no thank you.
           </Text>
         </View>
       </View>
@@ -352,7 +387,7 @@ const styles = StyleSheet.create({
   section: {
     padding: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+    borderBottomColor: colors.border,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -364,6 +399,16 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.xl,
     fontWeight: typography.fontWeights.semibold,
     color: colors.primary,
+  },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  viewAllText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.secondary,
+    fontWeight: typography.fontWeights.medium,
   },
   seeAllText: {
     fontSize: typography.fontSizes.sm,
@@ -381,25 +426,35 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     padding: spacing.md,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
+  },
+  statIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
   },
   statValue: {
     fontSize: typography.fontSizes.xxl,
     fontWeight: typography.fontWeights.bold,
     color: colors.primary,
-    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   statLabel: {
-    fontSize: typography.fontSizes.sm,
+    fontSize: typography.fontSizes.xs,
     color: colors.secondary,
-    marginTop: spacing.xs,
+    textAlign: 'center',
   },
   activityItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+    borderBottomColor: colors.border,
   },
   activityCover: {
     width: 50,
@@ -440,6 +495,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: 8,
     marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   annotationHeader: {
     flexDirection: 'row',
