@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react'; // CHANGED: added useCallback
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ImageBackground } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native'; // ADDED
 import { supabase } from '../lib/supabase'; // ADDED
@@ -259,7 +259,8 @@ export default function MyBooksScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
+    <ImageBackground source={require('../assets/background2.png')} style={styles.backgroundContainer} resizeMode="cover">
+      <View style={styles.container}>
       {/* Header Stats — use real counts from libraryData state */}
       <View style={styles.header}>
         <View style={styles.statBox}>
@@ -349,7 +350,8 @@ export default function MyBooksScreen({ navigation }) {
       <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {renderContent()}
       </ScrollView>
-    </View>
+      </View>
+    </ImageBackground>
   );
 }
 
@@ -363,14 +365,19 @@ const EmptyState = ({ icon, title, text }) => (
 );
 
 const styles = StyleSheet.create({
+  backgroundContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
 
   header: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.48)',
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.md,
     borderBottomWidth: 1,
@@ -403,7 +410,7 @@ const styles = StyleSheet.create({
 
   tabs: {
     flexDirection: 'row',
-    backgroundColor: colors.background,
+    backgroundColor: 'rgba(255, 255, 255, 0.44)',
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },

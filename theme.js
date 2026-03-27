@@ -3,9 +3,9 @@
 
 export const colors = {
   // Primary colors
-  primary: '#2C2C2C',
-  secondary: '#666666',
-  background: '#FFFFFF',
+  primary: '#581215',
+  secondary: '#581215',
+  background: '#faf4f3',
   surface: '#F5F5F5',
   
   // UI element colors
@@ -13,15 +13,15 @@ export const colors = {
   divider: '#E0E0E0',       //for dividers
   
   // Interactive elements
-  buttonPrimary: '#4A4A4A', //for primary buttons
+    buttonPrimary: '#581215', //for primary buttons
   buttonText: '#FFFFFF',    // White text on dark buttons
   
   // Navigation
-  navBackground: '#2C2C2C',
+    navBackground: '#581215',
   navText: '#FFFFFF',
-  sidebarBackground: '#E8E8E8',
-  sidebarText: '#2C2C2C',
-  sidebarActive: '#CCCCCC',
+    sidebarBackground: '#E8E8E8',
+    sidebarText: '#581215',
+    sidebarActive: '#581215',
   
   // Reading view
   pageBackground: '#FAFAFA',
@@ -38,8 +38,8 @@ export const colors = {
 export const typography = {
   fonts: {
     regular: 'System',      // Default font
-    serif: 'Georgia',       // FOr the eading view
-    heading: 'System',      // For headings
+    serif: 'Georgia',       // For the reading view
+    heading: 'Georgia',     // For headings
   },
   
   // Font sizes

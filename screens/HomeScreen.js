@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ImageBackground, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
@@ -43,6 +43,114 @@ const SAMPLE_BOOKS = [
     genres: ['Classic', 'Fiction', 'Romance'],
     isbn: '9780140007466',
   },
+  {
+    id: 4,
+    title: 'Pride and Prejudice',
+    author: 'Jane Austen',
+    rating: 4.28,
+    cover: 'https://covers.openlibrary.org/b/isbn/9780141439518-L.jpg',
+    currentPage: 0,
+    totalPages: 432,
+    description: 'A beloved classic about love, class, and first impressions.',
+    genres: ['Classic', 'Romance'],
+    isbn: '9780141439518',
+  },
+  {
+    id: 5,
+    title: '1984',
+    author: 'George Orwell',
+    rating: 4.18,
+    cover: 'https://covers.openlibrary.org/b/isbn/9780451524935-L.jpg',
+    currentPage: 0,
+    totalPages: 328,
+    description: 'A dystopian novel of surveillance, truth, and control.',
+    genres: ['Dystopian', 'Classic'],
+    isbn: '9780451524935',
+  },
+  {
+    id: 6,
+    title: 'The Hobbit',
+    author: 'J.R.R. Tolkien',
+    rating: 4.27,
+    cover: 'https://covers.openlibrary.org/b/isbn/9780547928227-L.jpg',
+    currentPage: 0,
+    totalPages: 300,
+    description: 'A fantasy adventure that starts in a quiet hobbit-hole.',
+    genres: ['Fantasy', 'Adventure'],
+    isbn: '9780547928227',
+  },
+  {
+    id: 7,
+    title: 'The Night Circus',
+    author: 'Erin Morgenstern',
+    rating: 4.04,
+    cover: 'https://covers.openlibrary.org/b/isbn/9780307744432-L.jpg',
+    currentPage: 0,
+    totalPages: 387,
+    description: 'A magical competition unfolds inside a mysterious circus.',
+    genres: ['Fantasy', 'Romance'],
+    isbn: '9780307744432',
+  },
+  {
+    id: 8,
+    title: 'Dune',
+    author: 'Frank Herbert',
+    rating: 4.26,
+    cover: 'https://covers.openlibrary.org/b/isbn/9780441172719-L.jpg',
+    currentPage: 0,
+    totalPages: 688,
+    description: 'An epic science fiction saga of power, prophecy, and survival.',
+    genres: ['Science Fiction'],
+    isbn: '9780441172719',
+  },
+  {
+    id: 9,
+    title: 'Rebecca',
+    author: 'Daphne du Maurier',
+    rating: 4.24,
+    cover: 'https://covers.openlibrary.org/b/isbn/9780380730407-L.jpg',
+    currentPage: 0,
+    totalPages: 449,
+    description: 'A gothic mystery centered around a haunting memory.',
+    genres: ['Mystery', 'Classic'],
+    isbn: '9780380730407',
+  },
+  {
+    id: 10,
+    title: 'Circe',
+    author: 'Madeline Miller',
+    rating: 4.23,
+    cover: 'https://covers.openlibrary.org/b/isbn/9780316556347-L.jpg',
+    currentPage: 0,
+    totalPages: 393,
+    description: 'A mythological retelling about identity, exile, and power.',
+    genres: ['Fantasy', 'Mythology'],
+    isbn: '9780316556347',
+  },
+  {
+    id: 11,
+    title: 'Normal People',
+    author: 'Sally Rooney',
+    rating: 3.82,
+    cover: 'https://covers.openlibrary.org/b/isbn/9781984822178-L.jpg',
+    currentPage: 0,
+    totalPages: 266,
+    description: 'A contemporary story of love and emotional complexity.',
+    genres: ['Fiction', 'Romance'],
+    isbn: '9781984822178',
+  },
+  {
+    id: 12,
+    title: 'Home Body',
+    author: 'Rupi Kaur',
+    rating: 4.10,
+    cover: 'https://covers.openlibrary.org/b/isbn/9781449486808-L.jpg',
+    currentPage: 0,
+    totalPages: 192,
+    description: 'Poetry and reflections on self, healing, and belonging.',
+    genres: ['Poetry'],
+    isbn: '9781449486808',
+  },
 ];
 
 export default function HomeScreen({ navigation }) {
@@ -55,13 +163,26 @@ export default function HomeScreen({ navigation }) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
+        const fallbackUsername =
+          user.user_metadata?.username ||
+          (user.email ? user.email.split('@')[0] : null) ||
+          'Reader';
+
         // Fetch user's profile for personalized greeting
-        const { data: profileData } = await supabase
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('username, display_name')
           .eq('id', user.id)
           .single();
-        setProfile(profileData);
+
+        if (profileError || !profileData) {
+          setProfile({ username: fallbackUsername, display_name: '' });
+        } else {
+          setProfile({
+            username: profileData.username || fallbackUsername,
+            display_name: profileData.display_name || '',
+          });
+        }
 
         // Fetch currently reading books
         const { data: readingData } = await supabase
@@ -96,15 +217,23 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ImageBackground source={require('../assets/background2.png')} style={styles.container} resizeMode="cover">
+      <ScrollView style={styles.scrollView}>
       <View style={styles.content}>
         {/* Welcome Section */}
-        <Text style={styles.title}>
-          Welcome, {profile?.display_name || profile?.username || 'Reader'}
-        </Text>
-        <Text style={styles.subtitle}>
-          Discover your next great read
-        </Text>
+        <View style={styles.welcomeRow}>
+          <View style={styles.welcomeIconCircle}>
+            <Ionicons name="person" size={20} color={colors.buttonText} />
+          </View>
+          <View style={styles.welcomeTextWrap}>
+            <Text style={styles.title}>
+              Welcome, {profile?.username || profile?.display_name || 'Reader'}
+            </Text>
+            <Text style={styles.subtitle}>
+              Discover your next great read
+            </Text>
+          </View>
+        </View>
 
         {/* Continue Reading Section */}
         {currentlyReading.length > 0 && (
@@ -171,21 +300,22 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.horizontalScroll}
-          >
-            {SAMPLE_BOOKS.map((book) => (
-              <BookCard
-                key={book.id}
-                book={book}
-                onPress={() => handleBookPress(book)}
-                onBeginReading={() => handleBeginReading(book)}
-              />
-            ))}
-          </ScrollView>
+          <View style={styles.sectionCard}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.horizontalScroll}
+            >
+              {SAMPLE_BOOKS.map((book) => (
+                <BookCard
+                  key={book.id}
+                  book={book}
+                  onPress={() => handleBookPress(book)}
+                  onBeginReading={() => handleBeginReading(book)}
+                />
+              ))}
+            </ScrollView>
+          </View>
         </View>
 
         {/* Popular This Week Section */}
@@ -196,24 +326,26 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.horizontalScroll}
-          >
-            {SAMPLE_BOOKS.slice().reverse().map((book) => (
-              <BookCard
-                key={book.id}
-                book={book}
-                onPress={() => handleBookPress(book)}
-                onBeginReading={() => handleBeginReading(book)}
-              />
-            ))}
-          </ScrollView>
+          <View style={styles.sectionCard}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.horizontalScroll}
+            >
+              {SAMPLE_BOOKS.slice().reverse().map((book) => (
+                <BookCard
+                  key={book.id}
+                  book={book}
+                  onPress={() => handleBookPress(book)}
+                  onBeginReading={() => handleBeginReading(book)}
+                />
+              ))}
+            </ScrollView>
+          </View>
         </View>
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </ImageBackground>
   );
 }
 
@@ -225,11 +357,13 @@ function BookCard({ book, onPress, onBeginReading }) {
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <Image
-        source={{ uri: book.cover }}
-        style={styles.bookCover}
-        resizeMode="cover"
-      />
+      <View style={styles.bookCoverShadow}>
+        <Image
+          source={{ uri: book.cover }}
+          style={styles.bookCover}
+          resizeMode="cover"
+        />
+      </View>
       <Text style={styles.cardTitle} numberOfLines={2}>{book.title}</Text>
       <Text style={styles.cardAuthor} numberOfLines={1}>{book.author}</Text>
 
@@ -257,26 +391,62 @@ function BookCard({ book, onPress, onBeginReading }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    width: '100%',
+    height: '100%',
+  },
+  scrollView: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   content: {
-    paddingVertical: spacing.lg,
+    paddingTop: 72,
+    paddingBottom: spacing.lg,
+  },
+  welcomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+  welcomeIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.buttonPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  welcomeTextWrap: {
+    flex: 1,
   },
   title: {
-    fontSize: typography.fontSizes.xxxl,
+    fontSize: 28,
     fontWeight: typography.fontWeights.bold,
-    color: colors.primary,
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    color: '#1F1F1F',
+    marginBottom: 2,
+    fontFamily: 'Georgia',
   },
   subtitle: {
     fontSize: typography.fontSizes.base,
-    color: colors.secondary,
-    marginBottom: spacing.xl,
-    paddingHorizontal: spacing.lg,
+    color: '#666666',
+    opacity: 0.8,
   },
   section: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
+  },
+  sectionCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    borderRadius: 16,
+    marginHorizontal: spacing.xs,
+    marginBottom: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 4,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -288,18 +458,20 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: typography.fontSizes.xl,
     fontWeight: typography.fontWeights.semibold,
-    color: colors.primary,
+    color: '#1F1F1F',
+    fontFamily: 'Georgia',
   },
   seeAllText: {
     fontSize: typography.fontSizes.sm,
-    color: colors.secondary,
+    color: '#666666',
     fontWeight: typography.fontWeights.medium,
+    fontFamily: 'Georgia',
   },
 
   // Currently Reading Card
   currentlyReadingCard: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
     borderRadius: 12,
     padding: spacing.md,
     marginHorizontal: spacing.lg,
@@ -309,6 +481,11 @@ const styles = StyleSheet.create({
     width: 80,
     height: 120,
     borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 9,
+    elevation: 8,
   },
   currentlyReadingInfo: {
     flex: 1,
@@ -318,11 +495,11 @@ const styles = StyleSheet.create({
   bookTitle: {
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.semibold,
-    color: colors.primary,
+    color: '#1F1F1F',
   },
   bookAuthor: {
     fontSize: typography.fontSizes.sm,
-    color: colors.secondary,
+    color: '#666666',
     marginTop: 2,
   },
   progressContainer: {
@@ -345,23 +522,24 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
+    color: '#666666',
     width: 35,
   },
   pageCount: {
     fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
+    color: '#666666',
     marginTop: 2,
   },
   continueButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.buttonPrimary,
+    backgroundColor: '#581215',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    borderRadius: 8,
+    borderRadius: 12,
     marginTop: spacing.sm,
+    alignSelf: 'center',
   },
   continueButtonText: {
     color: colors.buttonText,
@@ -373,28 +551,40 @@ const styles = StyleSheet.create({
   // Book Card Styles
   horizontalScroll: {
     paddingLeft: spacing.lg,
+    paddingBottom: spacing.xs,
   },
   bookCard: {
-    width: 140,
-    marginRight: spacing.md,
-    backgroundColor: colors.background,
+    width: 138,
+    marginRight: spacing.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    overflow: 'visible',
+  },
+  bookCoverShadow: {
+    borderRadius: 8,
+    marginBottom: spacing.xs,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 9,
+    elevation: 7,
+    ...(Platform.OS === 'web' ? { boxShadow: '0px 7px 16px rgba(0, 0, 0, 0.22)' } : {}),
   },
   bookCover: {
-    width: 140,
-    height: 210,
+    width: 138,
+    height: 207,
     borderRadius: 8,
     backgroundColor: colors.surface,
   },
   cardTitle: {
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
-    color: colors.primary,
+    color: '#1F1F1F',
     marginTop: spacing.sm,
     height: 36,
   },
   cardAuthor: {
     fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
+    color: '#666666',
     marginTop: 2,
   },
   ratingContainer: {
@@ -404,16 +594,18 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
+    color: '#666666',
     marginLeft: 4,
   },
   beginButton: {
-    backgroundColor: colors.buttonPrimary,
+    backgroundColor: '#581215',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    borderRadius: 8,
+    borderRadius: 12,
     marginTop: spacing.sm,
     alignItems: 'center',
+    width: 140,
+    alignSelf: 'center',
   },
   beginButtonText: {
     color: colors.buttonText,

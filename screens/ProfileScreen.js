@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ImageBackground } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
@@ -129,7 +129,8 @@ export default function ProfileScreen({ navigation }) {
   );
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ImageBackground source={require('../assets/background2.png')} style={styles.backgroundContainer} resizeMode="cover">
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
       {/* Profile Header */}
       <View style={styles.header}>
@@ -187,7 +188,6 @@ export default function ProfileScreen({ navigation }) {
           />
           <StatCard
             icon="bookmark"
-            label="Annotations"
             value={stats.totalAnnotations}
             color="#9C27B0"
           />
@@ -312,19 +312,25 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       <View style={{ height: spacing.xxl }} />
-    </ScrollView>
+      </ScrollView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
+  backgroundContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
   header: {
     alignItems: 'center',
     padding: spacing.lg,
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.48)',
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -375,7 +381,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.semibold,
   },
   secondaryButton: {
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.66)',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: 8,
@@ -386,6 +392,7 @@ const styles = StyleSheet.create({
   },
   section: {
     padding: spacing.lg,
+    backgroundColor: 'rgba(255, 255, 255, 0.34)',
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -423,7 +430,7 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
     padding: spacing.md,
     borderRadius: 12,
     borderWidth: 1,
@@ -491,7 +498,7 @@ const styles = StyleSheet.create({
     color: colors.secondary,
   },
   annotationPreview: {
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
     padding: spacing.md,
     borderRadius: 8,
     marginBottom: spacing.md,

@@ -17,7 +17,7 @@ import EditProfileScreen from './screens/EditProfileScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import SurveyScreen from './screens/SurveyScreen';
 import NewPasswordScreen from './screens/NewPasswordScreen';
-import BooksPage from './Fenoon/BooksPage';
+import BooksPage from './screens/BooksPage';
 import LoginScreen from './screens/LoginScreen';
 import ReadingStatsScreen from './screens/ReadingStatsScreen';
 import ReadingViewScreen from './screens/ReadingViewScreen';
@@ -115,14 +115,16 @@ function DrawerNavigator() {
     <Drawer.Navigator
       initialRouteName="Home"
       screenOptions={{
-        headerStyle: { backgroundColor: colors.navBackground },
-        headerTintColor: colors.navText,
+        headerTransparent: true,
+        headerShadowVisible: false,
+        headerStyle: { backgroundColor: 'transparent', elevation: 0, shadowOpacity: 0 },
+        headerTintColor: colors.primary,
         headerTitleStyle: { fontWeight: '600', fontSize: 18 },
         drawerStyle: { backgroundColor: colors.sidebarBackground, width: 240 },
-        drawerActiveTintColor: colors.primary,
+        drawerActiveTintColor: '#FFFFFF',
         drawerInactiveTintColor: colors.sidebarText,
         drawerActiveBackgroundColor: colors.sidebarActive,
-        drawerLabelStyle: { fontSize: 16, fontWeight: '500', marginLeft: -16 },
+        drawerLabelStyle: { fontSize: 16, fontWeight: '500', marginLeft: 1 },
         drawerItemStyle: { borderRadius: 8, marginHorizontal: 8, marginVertical: 8, paddingVertical: 4 },
       }}
     >
@@ -141,7 +143,7 @@ function DrawerNavigator() {
         component={SearchStack}
         options={{
           drawerLabel: 'Search Books',
-          title: 'Search',
+          title: 'Search Books',
           drawerIcon: ({ focused, color, size }) => (
             <Ionicons name={focused ? 'search' : 'search-outline'} size={size} color={color} />
           ),

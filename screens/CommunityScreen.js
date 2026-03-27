@@ -14,6 +14,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ImageBackground,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, typography } from '../theme';
@@ -254,9 +255,10 @@ export default function CommunityScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
+    <ImageBackground source={require('../assets/background2.png')} style={styles.backgroundContainer} resizeMode="cover">
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
         <View style={styles.headerTop}>
           <View>
             <Text style={styles.headerTitle}>Community</Text>
@@ -356,7 +358,8 @@ export default function CommunityScreen({ navigation }) {
         onClose={() => setShowCreateModal(false)}
         onSuccess={fetchAllData}
       />
-    </View>
+      </View>
+    </ImageBackground>
   );
 }
 
@@ -567,14 +570,15 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
 // Styles
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  header: { backgroundColor: colors.surface, paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
+  backgroundContainer: { flex: 1, width: '100%', height: '100%' },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  header: { backgroundColor: 'rgba(255, 255, 255, 0.48)', paddingHorizontal: spacing.lg, paddingTop: spacing.xxl, paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { fontSize: typography.fontSizes.xxxl, fontWeight: typography.fontWeights.bold, color: colors.primary },
   headerSubtitle: { fontSize: typography.fontSizes.base, color: colors.secondary, marginTop: spacing.xs, marginBottom: spacing.sm },
   createButton: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: 8, borderWidth: 1, borderColor: colors.buttonPrimary },
   createButtonText: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.buttonPrimary },
-  tabs: { flexDirection: 'row', backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border },
+  tabs: { flexDirection: 'row', backgroundColor: 'rgba(255, 255, 255, 0.44)', borderBottomWidth: 1, borderBottomColor: colors.border },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.md, borderBottomWidth: 3, borderBottomColor: 'transparent' },
   tabActive: { borderBottomColor: colors.buttonPrimary },
   tabText: { fontSize: typography.fontSizes.sm, color: colors.secondary, fontWeight: typography.fontWeights.medium },

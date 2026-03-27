@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
@@ -247,7 +248,7 @@ function SectionRow({
   onToggleSave,
 }) {
   return (
-    <View style={styles.section}>
+    <View style={styles.sectionGroup}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{title}</Text>
         <TouchableOpacity onPress={onSeeAll} disabled={!books?.length}>
@@ -255,6 +256,7 @@ function SectionRow({
         </TouchableOpacity>
       </View>
 
+      <View style={styles.sectionCard}>
       {loading ? (
         <View style={styles.rowStatus}>
           <ActivityIndicator />
@@ -276,7 +278,7 @@ function SectionRow({
                 activeOpacity={0.85}
               >
                 {/* cover wrapper so icon can be absolute */}
-                <View style={{ position: "relative" }}>
+                <View style={[styles.bookCoverShadow, { position: "relative" }]}>
                   <Image source={{ uri: b.cover }} style={styles.bookCover} />
 
                   {/* Heart icon */}
@@ -334,6 +336,7 @@ function SectionRow({
           })}
         </ScrollView>
       )}
+      </View>
     </View>
   );
 }
@@ -554,11 +557,14 @@ const onToggleSave = async (b) => {
 
   return (
     <>
-      <ScrollView style={styles.container}>
+        <View style={styles.backgroundContainer}>
+          <Image
+            source={require('../assets/background2.png')}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+          />
+          <ScrollView style={styles.container}>
         <View style={styles.content}>
-          <Text style={styles.title}>Books</Text>
-          <Text style={styles.subtitle}>Search (Google) + Categories (Dataset)</Text>
-
           <View style={styles.searchRow}>
             <Ionicons name="search-outline" size={18} color={colors.secondary} />
             <TextInput
@@ -604,7 +610,8 @@ const onToggleSave = async (b) => {
             />
           ))}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
 
       <Modal visible={!!previewUrl} animationType="slide" onRequestClose={() => setPreviewUrl(null)}>
         <View style={{ flex: 1, backgroundColor: "black" }}>
@@ -631,18 +638,29 @@ const onToggleSave = async (b) => {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { paddingVertical: spacing.lg },
+  backgroundContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  content: { paddingTop: 92, paddingBottom: spacing.lg },
 
   title: {
     fontSize: typography.fontSizes.xxxl,
     fontWeight: typography.fontWeights.bold,
-    color: colors.primary,
+    color: '#1F1F1F',
     paddingHorizontal: spacing.lg,
+    fontFamily: 'Georgia',
   },
   subtitle: {
     fontSize: typography.fontSizes.base,
-    color: colors.secondary,
+    color: '#666666',
     marginTop: spacing.xs,
     marginBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
@@ -651,7 +669,7 @@ const styles = StyleSheet.create({
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.58)',
     marginHorizontal: spacing.lg,
     borderRadius: 12,
     paddingHorizontal: spacing.md,
@@ -662,7 +680,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    color: colors.primary,
+    color: '#1F1F1F',
     fontSize: typography.fontSizes.base,
     paddingVertical: 6,
   },
@@ -674,7 +692,21 @@ const styles = StyleSheet.create({
   },
   searchBtnText: { color: colors.buttonText, fontWeight: typography.fontWeights.semibold },
 
-  section: { marginTop: spacing.xl },
+  sectionGroup: {
+    marginTop: spacing.lg,
+    marginHorizontal: spacing.xs,
+  },
+  sectionCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    borderRadius: 16,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -685,42 +717,56 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: typography.fontSizes.xl,
     fontWeight: typography.fontWeights.semibold,
-    color: colors.primary,
+    color: '#1F1F1F',
+    fontFamily: 'Georgia',
+  },
+  seeAllText: {
+    color: '#666666',
+    fontSize: typography.fontSizes.sm,
+    fontFamily: 'Georgia',
   },
 
   rowStatus: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: spacing.lg },
-  rowStatusText: { color: colors.secondary },
+  rowStatusText: { color: '#666666' },
   errorText: { color: "#B00020", paddingHorizontal: spacing.lg },
 
-  horizontalScroll: { paddingLeft: spacing.lg },
+  horizontalScroll: { paddingLeft: spacing.lg, paddingBottom: spacing.xs },
 
   bookCard: {
-    width: 170,
-    marginRight: spacing.md,
-    backgroundColor: colors.surface,
+    width: 138,
+    marginRight: spacing.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.30)',
     borderRadius: 18,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.border,
+    overflow: "visible",
   },
-  bookCover: { width: "100%", height: 220, backgroundColor: colors.surface },
+  bookCoverShadow: {
+    borderRadius: 8,
+    marginBottom: spacing.xs,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 9,
+    elevation: 7,
+    ...(Platform.OS === 'web' ? { boxShadow: '0px 7px 16px rgba(0, 0, 0, 0.22)' } : {}),
+  },
+  bookCover: { width: "100%", height: 207, backgroundColor: colors.surface, borderRadius: 8 },
 
   cardBody: { padding: spacing.md, flexDirection: "column", height: 190 },
 
   isbnText: {
     fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
+    color: '#666666',
     marginBottom: 6,
   },
 
   cardTitle: {
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
-    color: colors.primary,
+    color: '#1F1F1F',
     lineHeight: 18,
     minHeight: 36,
   },
-  cardAuthor: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 4 },
+  cardAuthor: { fontSize: typography.fontSizes.xs, color: '#666666', marginTop: 4 },
 
   cardMetaRow: {
     flexDirection: "row",
@@ -728,25 +774,27 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 6,
   },
-  cardMeta: { fontSize: typography.fontSizes.xs, color: colors.secondary, flex: 1 },
+  cardMeta: { fontSize: typography.fontSizes.xs, color: '#666666', flex: 1 },
   ratingRow: { flexDirection: "row", alignItems: "center", marginLeft: 8 },
   cardRating: {
     marginLeft: 6,
     fontSize: typography.fontSizes.xs,
-    color: colors.primary,
+    color: '#1F1F1F',
     fontWeight: typography.fontWeights.semibold,
   },
-  noRating: { marginLeft: 8, fontSize: typography.fontSizes.xs, color: colors.secondary, opacity: 0.7 },
+  noRating: { marginLeft: 8, fontSize: typography.fontSizes.xs, color: '#666666', opacity: 0.7 },
 
   beginBtn: {
-    marginTop: "auto",
-    backgroundColor: colors.buttonPrimary,
-    paddingVertical: 10,
+    backgroundColor: '#581215',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderRadius: 12,
-    alignItems: "center",
-    marginTop: 12,
+    marginTop: spacing.sm,
+    alignItems: 'center',
+    width: 140,
+    alignSelf: 'center',
   },
-  beginBtnText: { color: colors.buttonText, fontWeight: typography.fontWeights.semibold },
+  beginBtnText: { color: colors.buttonText, fontWeight: typography.fontWeights.semibold, fontSize: typography.fontSizes.sm },
 
   saveIcon: {
     position: "absolute",
