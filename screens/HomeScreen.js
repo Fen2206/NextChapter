@@ -184,24 +184,7 @@ export default function HomeScreen({ navigation }) {
           });
         }
 
-        // Fetch currently reading books
-        const { data: readingData } = await supabase
-          .from('user_books')
-          .select(`
-            id,
-            current_page,
-            status,
-            books (
-              id,
-              title,
-              authors,
-              cover_url,
-              page_count
-            )
-          `)
-          .eq('user_id', user.id)
-          .eq('status', 'reading');
-        setCurrentlyReading(readingData || []);
+      
       };
       fetchData();
     }, [])
