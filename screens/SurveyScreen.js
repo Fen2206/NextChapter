@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Image,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -43,19 +51,41 @@ const FREQUENCIES = [
   { id: 'occasional', label: 'Occasionally', sub: 'When I find time' },
 ];
 
-const STEPS = ['genres', 'goals', 'format', 'frequency'];
+// map survey genre ids to club genre tags
+const GENRE_LABEL_MAP = {
+  fiction: 'Fiction',
+  nonfiction: 'Non-Fiction',
+  mystery: 'Mystery',
+  fantasy: 'Fantasy',
+  scifi: 'Scifi',
+  romance: 'Romance',
+  horror: 'Horror',
+  thriller: 'Thriller',
+  biography: 'Biography',
+  selfhelp: 'Self-Help',
+  history: 'History',
+  poetry: 'Poetry',
+};
 
-export default function OnboardingScreen({ navigation, route }) {
+const STEPS = ['genres', 'goals', 'format', 'frequency', 'clubs'];
+
+export default function SurveyScreen({ navigation, route }) {
   const isRetake = route?.params?.retake || false;
 
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [loadingClubs, setLoadingClubs] = useState(false);
 
   // selections
   const [selectedGenres, setSelectedGenres] = useState([]);
   const [selectedGoals, setSelectedGoals] = useState([]);
   const [selectedFormat, setSelectedFormat] = useState(null);
   const [selectedFrequency, setSelectedFrequency] = useState(null);
+
+  // recommended clubs
+  const [recommendedClubs, setRecommendedClubs] = useState([]);
+  const [joiningClubId, setJoiningClubId] = useState(null);
+  const [joinedClubIds, setJoinedClubIds] = useState([]);
 
   const currentStep = STEPS[step];
   const isLastStep = step === STEPS.length - 1;
@@ -77,14 +107,20 @@ export default function OnboardingScreen({ navigation, route }) {
     if (currentStep === 'goals') return selectedGoals.length > 0;
     if (currentStep === 'format') return selectedFormat !== null;
     if (currentStep === 'frequency') return selectedFrequency !== null;
+    if (currentStep === 'clubs') return true; // always can finish
     return false;
   };
 
-  const handleNext = () => {
-    if (!isLastStep) {
+  const handleNext = async () => {
+    if (currentStep === 'frequency') {
+      // save prefs and load clubs before showing clubs step
+      await handleSavePreferences();
+      await fetchRecommendedClubs();
+      setStep((s) => s + 1);
+    } else if (!isLastStep) {
       setStep((s) => s + 1);
     } else {
-      handleSave();
+      handleFinish();
     }
   };
 
@@ -96,13 +132,85 @@ export default function OnboardingScreen({ navigation, route }) {
     }
   };
 
-  const handleSave = async () => {
+  // parse author from Python dict string format e.g. {'name': 'Shari Lapena', ...}
+  const parseAuthor = (raw) => {
+    if (!raw) return 'Unknown';
+    const s = String(raw).trim();
+    const match = s.match(/'name':\s*'([^']+)'/) || s.match(/"name":\s*"([^"]+)"/);
+    if (match) return match[1];
+    if (!s.startsWith('{') && !s.startsWith('[')) return s;
+    return 'Unknown';
+  };
+
+  // fetch recommended books from Gutenberg — fully readable, free, no restrictions
+  const fetchRecommendedBooks = async (genreLabels) => {
+    try {
+      if (!genreLabels || genreLabels.length === 0) return [];
+
+      const results = [];
+      const seenIds = new Set();
+      const TARGET = 15;
+
+      for (const genre of genreLabels.slice(0, 3)) {
+        try {
+          const url = 'https://gutendex.com/books?search=' +
+            encodeURIComponent(genre) + '&languages=en';
+
+          const res = await fetch(url);
+          const data = await res.json().catch(() => null);
+
+          for (const b of data?.results || []) {
+            if (seenIds.has(b.id)) continue;
+            seenIds.add(b.id);
+
+            const author = b.authors?.[0]?.name || 'Unknown';
+            const cover = b.formats?.['image/jpeg'] ||
+              'https://via.placeholder.com/140x210?text=No+Cover';
+
+            // prefer html text, fall back to plain text
+            const textUrl =
+              b.formats?.['text/html; charset=utf-8'] ||
+              b.formats?.['text/html'] ||
+              b.formats?.['text/plain; charset=utf-8'] ||
+              b.formats?.['text/plain'] ||
+              null;
+
+            if (!textUrl) continue; // skip books with no readable text
+
+            results.push({
+              id: String(b.id),
+              source: 'gutenberg',
+              title: b.title || 'Untitled',
+              author,
+              cover: String(cover).replace('http://', 'https://'),
+              pages: 0,
+              rating: null,
+              isbn: null,
+              textUrl,
+            });
+
+            if (results.length >= TARGET) break;
+          }
+        } catch (genreErr) {
+          console.log('Gutenberg genre fetch error:', genreErr.message);
+        }
+        if (results.length >= TARGET) break;
+      }
+
+      return results.slice(0, TARGET);
+    } catch (err) {
+      console.log('Fetch recommended books error:', err.message);
+      return [];
+    }
+  };
+
+    // save preferences to supabase (called before clubs step)
+  const handleSavePreferences = async () => {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not logged in');
 
-      // fetch existing preferences to merge with
       const { data: profileData } = await supabase
         .from('profiles')
         .select('preferences')
@@ -111,7 +219,11 @@ export default function OnboardingScreen({ navigation, route }) {
 
       const existingPrefs = profileData?.preferences || {};
 
-      const { error } = await supabase
+      // fetch recommended books based on genres
+      const genreLabels = selectedGenres.map((id) => GENRE_LABEL_MAP[id]).filter(Boolean);
+      const recommendedBooks = await fetchRecommendedBooks(genreLabels);
+
+      await supabase
         .from('profiles')
         .update({
           preferences: {
@@ -121,29 +233,96 @@ export default function OnboardingScreen({ navigation, route }) {
             format: selectedFormat,
             frequency: selectedFrequency,
             onboardingComplete: true,
+            recommendedBooks,
           },
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id);
-
-      if (error) throw error;
-
-      // go to home or back depending on context
-      if (isRetake) {
-        navigation.goBack();
-      } else {
-        navigation.replace('Home');
-      }
     } catch (err) {
-      console.log('Onboarding save error:', err.message);
-      // still navigate even if save fails
-      if (isRetake) {
-        navigation.goBack();
-      } else {
-        navigation.replace('Home');
-      }
+      console.log('Survey save error:', err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // fetch clubs that match user's selected genres
+  const fetchRecommendedClubs = async () => {
+    setLoadingClubs(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // get clubs user is already a member of
+      const { data: memberData } = await supabase
+        .from('club_memberships')
+        .select('club_id')
+        .eq('user_id', user.id);
+      const alreadyJoined = (memberData || []).map((m) => m.club_id);
+
+      // map selected genre ids to their label strings for matching
+      const genreLabels = selectedGenres.map((id) => GENRE_LABEL_MAP[id]).filter(Boolean);
+
+      // fetch all public clubs
+      const { data: clubs } = await supabase
+        .from('clubs')
+        .select('id, name, description, genres, book_id')
+        .eq('is_public', true);
+
+      if (!clubs) { setRecommendedClubs([]); return; }
+
+      // score each club by how many genres overlap
+      const scored = clubs
+        .filter((c) => !alreadyJoined.includes(c.id))
+        .map((c) => {
+          const clubGenres = c.genres || [];
+          const overlap = genreLabels.filter((g) =>
+            clubGenres.some((cg) => cg.toLowerCase() === g.toLowerCase())
+          ).length;
+          return { ...c, score: overlap };
+        })
+        .filter((c) => c.score > 0) // only clubs with at least 1 match
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5); // top 5
+
+      // if no matches, fall back to top 3 public clubs
+      if (scored.length === 0) {
+        const fallback = clubs
+          .filter((c) => !alreadyJoined.includes(c.id))
+          .slice(0, 3)
+          .map((c) => ({ ...c, score: 0 }));
+        setRecommendedClubs(fallback);
+      } else {
+        setRecommendedClubs(scored);
+      }
+    } catch (err) {
+      console.log('Fetch clubs error:', err.message);
+      setRecommendedClubs([]);
+    } finally {
+      setLoadingClubs(false);
+    }
+  };
+
+  const handleJoinClub = async (clubId) => {
+    setJoiningClubId(clubId);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('club_memberships')
+        .insert({ club_id: clubId, user_id: user.id, role: 'member' });
+      if (!error) {
+        setJoinedClubIds((prev) => [...prev, clubId]);
+      }
+    } catch (err) {
+      console.log('Join club error:', err.message);
+    } finally {
+      setJoiningClubId(null);
+    }
+  };
+
+  const handleFinish = () => {
+    if (isRetake) {
+      navigation.goBack();
+    } else {
+      navigation.replace('Home');
     }
   };
 
@@ -163,11 +342,7 @@ export default function OnboardingScreen({ navigation, route }) {
                   style={[styles.chip, selected && styles.chipSelected]}
                   onPress={() => toggleGenre(genre.id)}
                 >
-                  <Ionicons
-                    name={genre.icon}
-                    size={18}
-                    color={selected ? '#FAFAFA' : '#4A4A4A'}
-                  />
+                  <Ionicons name={genre.icon} size={18} color={selected ? '#FAFAFA' : '#4A4A4A'} />
                   <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
                     {genre.label}
                   </Text>
@@ -193,11 +368,7 @@ export default function OnboardingScreen({ navigation, route }) {
                   style={[styles.chip, selected && styles.chipSelected]}
                   onPress={() => toggleGoal(goal.id)}
                 >
-                  <Ionicons
-                    name={goal.icon}
-                    size={18}
-                    color={selected ? '#FAFAFA' : '#4A4A4A'}
-                  />
+                  <Ionicons name={goal.icon} size={18} color={selected ? '#FAFAFA' : '#4A4A4A'} />
                   <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
                     {goal.label}
                   </Text>
@@ -223,11 +394,7 @@ export default function OnboardingScreen({ navigation, route }) {
                   style={[styles.formatCard, selected && styles.formatCardSelected]}
                   onPress={() => setSelectedFormat(format.id)}
                 >
-                  <Ionicons
-                    name={format.icon}
-                    size={24}
-                    color={selected ? '#FAFAFA' : '#4A4A4A'}
-                  />
+                  <Ionicons name={format.icon} size={24} color={selected ? '#FAFAFA' : '#4A4A4A'} />
                   <Text style={[styles.formatLabel, selected && styles.formatLabelSelected]}>
                     {format.label}
                   </Text>
@@ -274,18 +441,82 @@ export default function OnboardingScreen({ navigation, route }) {
         </>
       );
     }
+
+    if (currentStep === 'clubs') {
+      return (
+        <>
+          <Text style={styles.stepTitle}>Clubs picked for you!</Text>
+          <Text style={styles.stepSubtitle}>
+            Based on your interests — join any that look good!
+          </Text>
+
+          {loadingClubs ? (
+            <ActivityIndicator size="large" color="#4A4A4A" style={{ marginTop: 40 }} />
+          ) : recommendedClubs.length === 0 ? (
+            <View style={styles.noClubs}>
+              <Ionicons name="people-outline" size={48} color="#CCCCCC" />
+              <Text style={styles.noClubsText}>No clubs found yet — check back soon!</Text>
+            </View>
+          ) : (
+            <View style={styles.cardList}>
+              {recommendedClubs.map((club) => {
+                const joined = joinedClubIds.includes(club.id);
+                const joining = joiningClubId === club.id;
+                return (
+                  <View key={club.id} style={styles.clubCard}>
+                    <View style={styles.clubInfo}>
+                      <View style={styles.clubIconContainer}>
+                        <Ionicons name="people" size={22} color="#4A4A4A" />
+                      </View>
+                      <View style={styles.clubText}>
+                        <Text style={styles.clubName}>{club.name}</Text>
+                        {club.description ? (
+                          <Text style={styles.clubDesc} numberOfLines={2}>
+                            {club.description}
+                          </Text>
+                        ) : null}
+                        {club.genres?.length > 0 && (
+                          <View style={styles.clubGenres}>
+                            {club.genres.slice(0, 3).map((g) => (
+                              <View key={g} style={styles.genreTag}>
+                                <Text style={styles.genreTagText}>{g}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[styles.joinButton, joined && styles.joinButtonDone]}
+                      onPress={() => !joined && handleJoinClub(club.id)}
+                      disabled={joined || joining}
+                    >
+                      {joining ? (
+                        <ActivityIndicator size="small" color="#FAFAFA" />
+                      ) : (
+                        <Text style={styles.joinButtonText}>
+                          {joined ? '✓ Joined' : 'Join'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </>
+      );
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
-
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.appName}>Next Chapter</Text>
         <TouchableOpacity onPress={handleSkip}>
-          <Text style={styles.skipText}>
-            {isRetake ? 'Cancel' : 'Skip'}
-          </Text>
+          <Text style={styles.skipText}>{isRetake ? 'Cancel' : 'Skip'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -300,16 +531,13 @@ export default function OnboardingScreen({ navigation, route }) {
       </View>
 
       {/* Step content */}
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {renderStep()}
       </ScrollView>
 
       {/* Bottom nav */}
       <View style={styles.footer}>
-        {step > 0 && (
+        {step > 0 && currentStep !== 'clubs' && (
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => setStep((s) => s - 1)}
@@ -323,21 +551,20 @@ export default function OnboardingScreen({ navigation, route }) {
           style={[
             styles.nextButton,
             !canAdvance() && styles.nextButtonDisabled,
-            step === 0 && styles.nextButtonFull,
+            (step === 0 || currentStep === 'clubs') && styles.nextButtonFull,
           ]}
           onPress={handleNext}
           disabled={!canAdvance() || saving}
         >
-          {saving ? (
+          {saving || (currentStep === 'frequency' && loadingClubs) ? (
             <ActivityIndicator color="#FAFAFA" />
           ) : (
             <Text style={styles.nextText}>
-              {isLastStep ? 'Get Started' : 'Next'}
+              {isLastStep ? "Let's Go!" : 'Next'}
             </Text>
           )}
         </TouchableOpacity>
       </View>
-
     </SafeAreaView>
   );
 }
@@ -487,6 +714,82 @@ const styles = StyleSheet.create({
   },
   freqSubSelected: {
     color: 'rgba(255,255,255,0.7)',
+  },
+
+  // Club cards
+  clubCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#CCCCCC',
+    padding: 16,
+    gap: 12,
+  },
+  clubInfo: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  clubIconContainer: {
+    width: 44,
+    height: 44,
+    backgroundColor: '#F0F0F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clubText: {
+    flex: 1,
+  },
+  clubName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2C2C2C',
+    marginBottom: 4,
+  },
+  clubDesc: {
+    fontSize: 13,
+    color: '#888888',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  clubGenres: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  genreTag: {
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  genreTagText: {
+    fontSize: 11,
+    color: '#4A4A4A',
+    fontWeight: '500',
+  },
+  joinButton: {
+    backgroundColor: '#4A4A4A',
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+  },
+  joinButtonDone: {
+    backgroundColor: '#888888',
+  },
+  joinButtonText: {
+    color: '#FAFAFA',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  noClubs: {
+    alignItems: 'center',
+    marginTop: 48,
+    gap: 12,
+  },
+  noClubsText: {
+    fontSize: 14,
+    color: '#888888',
+    textAlign: 'center',
   },
   footer: {
     flexDirection: 'row',

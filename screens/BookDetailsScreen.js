@@ -1,98 +1,100 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors, spacing, typography } from '../theme';
 
 export default function BookDetailsScreen({ route, navigation }) {
-  // For now, using sample data
+  // use the book passed in from navigation, fall back to sample data
+  const passedBook = route?.params?.book;
+
+  // parse author — goodreads_books stores it as a JSON-like string
+  const parseAuthor = (raw) => {
+    if (!raw) return 'Unknown Author';
+    if (Array.isArray(raw)) return raw.join(', ');
+    const s = String(raw).trim();
+    // try to extract name from dict-like string e.g. {'name': 'Shari Lapena', ...}
+    const match = s.match(/'name':\s*'([^']+)'/) || s.match(/"name":\s*"([^"]+)"/);
+    if (match) return match[1];
+    // try JSON parse
+    try {
+      const obj = JSON.parse(s.replace(/'/g, '"'));
+      if (obj?.name) return obj.name;
+    } catch {}
+    // if it looks like a plain string, return as-is
+    if (!s.startsWith('{') && !s.startsWith('[')) return s;
+    return 'Unknown Author';
+  };
+
   const book = {
-    title: 'IT',
-    author: 'Stephen King',
-    rating: 4.24,
-    totalRatings: 1234,
-    cover: 'https://covers.openlibrary.org/b/isbn/9780451149510-L.jpg',
-    description: 'Welcome to Derry, a small town in Maine where children are afraid to go outside. The story follows a group of kids who face their deepest fears in the form of a terrifying creature known as "It".',
-    pageCount: 1184,
-    publishYear: 1987,
-    genres: ['Fiction', 'Fantasy', 'Horror'],
-    isbn: '9780451149510',
-    currentPage: 721,
-    readingStatus: 'reading', // 'reading', 'completed', 'want-to-read', or null
-    progress: 61, // percentage
+    title: passedBook?.title || 'Unknown Title',
+    author: parseAuthor(passedBook?.author || passedBook?.authors),
+    rating: passedBook?.rating || passedBook?.average_rating || null,
+    cover: passedBook?.cover || passedBook?.cover_url || 'https://via.placeholder.com/120x180?text=No+Cover',
+    description: passedBook?.description || 'No description available.',
+    pageCount: passedBook?.pages || passedBook?.page_count || passedBook?.totalPages || null,
+    publishYear: passedBook?.publishYear || passedBook?.publication_date?.substring(0, 4) || null,
+    genres: passedBook?.genres_clean || passedBook?.genres || [],
+    isbn: passedBook?.isbn || null,
+    currentPage: passedBook?.currentPage || 0,
+    readingStatus: passedBook?.readingStatus || null,
+    progress: passedBook?.progress || 0,
+    source: passedBook?.source || null,
   };
 
   const handleBeginReading = () => {
-  navigation.navigate('ReadingView', { 
-    book: book,
-    startPage: book.currentPage || 1 
-  });
-};
+    navigation.navigate('ReadingView', {
+      book: passedBook,
+      startPage: book.currentPage || 1,
+    });
+  };
 
   const handleAddToLibrary = () => {
     alert('Added to your library!');
   };
 
   const handleJoinBookClub = () => {
-    alert('Book club feature coming soon!');
+    navigation.navigate('Community');
   };
 
   const renderStars = (rating) => {
+    if (!rating) return null;
     const stars = [];
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 !== 0;
 
     for (let i = 0; i < fullStars; i++) {
-      stars.push(
-        <Ionicons key={i} name="star" size={18} color="#FFD700" />
-      );
+      stars.push(<Ionicons key={i} name="star" size={18} color="#FFD700" />);
     }
-
     if (hasHalfStar) {
-      stars.push(
-        <Ionicons key="half" name="star-half" size={18} color="#FFD700" />
-      );
+      stars.push(<Ionicons key="half" name="star-half" size={18} color="#FFD700" />);
     }
-
     const emptyStars = 5 - Math.ceil(rating);
     for (let i = 0; i < emptyStars; i++) {
-      stars.push(
-        <Ionicons key={`empty-${i}`} name="star-outline" size={18} color="#FFD700" />
-      );
+      stars.push(<Ionicons key={`empty-${i}`} name="star-outline" size={18} color="#FFD700" />);
     }
-
     return stars;
   };
 
   const getStatusInfo = () => {
     switch (book.readingStatus) {
       case 'reading':
-        return {
-          icon: 'book',
-          text: 'Currently Reading',
-          color: '#4CAF50',
-        };
+        return { icon: 'book', text: 'Currently Reading', color: '#4CAF50' };
       case 'completed':
-        return {
-          icon: 'checkmark-circle',
-          text: 'Completed',
-          color: '#2196F3',
-        };
+        return { icon: 'checkmark-circle', text: 'Completed', color: '#2196F3' };
       case 'want-to-read':
-        return {
-          icon: 'bookmark',
-          text: 'Want to Read',
-          color: '#FF9800',
-        };
+        return { icon: 'bookmark', text: 'Want to Read', color: '#FF9800' };
       default:
         return null;
     }
   };
 
   const statusInfo = getStatusInfo();
+  const stars = renderStars(book.rating);
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.content}>
+
         {/* Book Cover and Basic Info */}
         <View style={styles.headerSection}>
           <View style={styles.coverContainer}>
@@ -101,79 +103,76 @@ export default function BookDetailsScreen({ route, navigation }) {
               style={styles.coverImage}
               resizeMode="cover"
             />
-            {/* Status Badge on Cover */}
             {statusInfo && (
               <View style={[styles.statusBadge, { backgroundColor: statusInfo.color }]}>
                 <Ionicons name={statusInfo.icon} size={14} color="#FFFFFF" />
               </View>
             )}
           </View>
-          
+
           <View style={styles.headerInfo}>
             <Text style={styles.title}>{book.title}</Text>
             <Text style={styles.author}>by {book.author}</Text>
-            
-            {/* Status Text */}
+
             {statusInfo && (
               <View style={styles.statusContainer}>
                 <View style={[styles.statusDot, { backgroundColor: statusInfo.color }]} />
                 <Text style={styles.statusText}>{statusInfo.text}</Text>
               </View>
             )}
-            
+
             {/* Rating */}
-            <View style={styles.ratingContainer}>
-              <View style={styles.stars}>
-                {renderStars(book.rating)}
+            {stars && (
+              <View style={styles.ratingContainer}>
+                <View style={styles.stars}>{stars}</View>
+                <Text style={styles.ratingText}>
+                  {book.rating?.toFixed(2)}
+                </Text>
               </View>
-              <Text style={styles.ratingText}>
-                {book.rating} ({book.totalRatings.toLocaleString()} ratings)
-              </Text>
-            </View>
+            )}
 
             {/* Book Info Pills */}
             <View style={styles.infoRow}>
-              <View style={styles.infoPill}>
-                <Ionicons name="book-outline" size={14} color={colors.secondary} />
-                <Text style={styles.infoPillText}>{book.pageCount} pages</Text>
-              </View>
-              <View style={styles.infoPill}>
-                <Ionicons name="calendar-outline" size={14} color={colors.secondary} />
-                <Text style={styles.infoPillText}>{book.publishYear}</Text>
-              </View>
+              {book.pageCount ? (
+                <View style={styles.infoPill}>
+                  <Ionicons name="book-outline" size={14} color={colors.secondary} />
+                  <Text style={styles.infoPillText}>{book.pageCount} pages</Text>
+                </View>
+              ) : null}
+              {book.publishYear ? (
+                <View style={styles.infoPill}>
+                  <Ionicons name="calendar-outline" size={14} color={colors.secondary} />
+                  <Text style={styles.infoPillText}>{book.publishYear}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </View>
 
-        {/* Progress Section - Only show if currently reading */}
-        {book.readingStatus === 'reading' && book.currentPage && (
+        {/* Progress Section */}
+        {book.readingStatus === 'reading' && book.currentPage ? (
           <View style={styles.progressSection}>
             <View style={styles.progressHeader}>
               <Text style={styles.progressTitle}>Your Progress</Text>
               <Text style={styles.progressPercentage}>{book.progress}%</Text>
             </View>
-            
             <View style={styles.progressBarContainer}>
               <View style={styles.progressBar}>
                 <View style={[styles.progressFill, { width: `${book.progress}%` }]} />
               </View>
             </View>
-            
             <Text style={styles.progressText}>
               Page {book.currentPage} of {book.pageCount}
             </Text>
           </View>
-        )}
+        ) : null}
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleBeginReading}
-          >
-            <Ionicons 
-              name={book.readingStatus === 'reading' ? 'play' : 'book-outline'} 
-              size={20} 
+          <TouchableOpacity style={styles.primaryButton} onPress={handleBeginReading}>
+            <Ionicons
+              name={book.readingStatus === 'reading' ? 'play' : 'book-outline'}
+              size={20}
               color={colors.buttonText}
               style={styles.buttonIcon}
             />
@@ -183,18 +182,11 @@ export default function BookDetailsScreen({ route, navigation }) {
           </TouchableOpacity>
 
           <View style={styles.secondaryButtons}>
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={handleAddToLibrary}
-            >
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleAddToLibrary}>
               <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
               <Text style={styles.secondaryButtonText}>Add to Library</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={handleJoinBookClub}
-            >
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleJoinBookClub}>
               <Ionicons name="people-outline" size={20} color={colors.primary} />
               <Text style={styles.secondaryButtonText}>Join Book Club</Text>
             </TouchableOpacity>
@@ -202,16 +194,18 @@ export default function BookDetailsScreen({ route, navigation }) {
         </View>
 
         {/* Genres */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Genres</Text>
-          <View style={styles.genresContainer}>
-            {book.genres.map((genre, index) => (
-              <View key={index} style={styles.genreTag}>
-                <Text style={styles.genreText}>{genre}</Text>
-              </View>
-            ))}
+        {book.genres?.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Genres</Text>
+            <View style={styles.genresContainer}>
+              {book.genres.map((genre, index) => (
+                <View key={index} style={styles.genreTag}>
+                  <Text style={styles.genreText}>{genre}</Text>
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Description */}
         <View style={styles.section}>
@@ -219,28 +213,49 @@ export default function BookDetailsScreen({ route, navigation }) {
           <Text style={styles.description}>{book.description}</Text>
         </View>
 
-        {/* Additional Info */}
+        {/* Details */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Details</Text>
           <View style={styles.detailsCard}>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>ISBN</Text>
-              <Text style={styles.detailValue}>{book.isbn}</Text>
-            </View>
-            <View style={styles.detailDivider} />
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Pages</Text>
-              <Text style={styles.detailValue}>{book.pageCount}</Text>
-            </View>
-            <View style={styles.detailDivider} />
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Published</Text>
-              <Text style={styles.detailValue}>{book.publishYear}</Text>
-            </View>
+            {book.isbn && (
+              <>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>ISBN</Text>
+                  <Text style={styles.detailValue}>{book.isbn}</Text>
+                </View>
+                <View style={styles.detailDivider} />
+              </>
+            )}
+            {book.pageCount && (
+              <>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Pages</Text>
+                  <Text style={styles.detailValue}>{book.pageCount}</Text>
+                </View>
+                <View style={styles.detailDivider} />
+              </>
+            )}
+            {book.publishYear && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Published</Text>
+                <Text style={styles.detailValue}>{book.publishYear}</Text>
+              </View>
+            )}
+            {book.source && (
+              <>
+                <View style={styles.detailDivider} />
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Source</Text>
+                  <Text style={styles.detailValue}>
+                    {book.source === 'google' ? 'Google Books' :
+                     book.source === 'dataset' ? 'Goodreads' : book.source}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
 
-        {/* Bottom padding */}
         <View style={{ height: spacing.xl }} />
       </View>
     </ScrollView>
@@ -255,8 +270,6 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.lg,
   },
-
-  // Header Section
   headerSection: {
     flexDirection: 'row',
     marginBottom: spacing.xl,
@@ -269,7 +282,6 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 8,
     backgroundColor: colors.surface,
-    // Add subtle shadow
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -285,12 +297,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    // Shadow for badge
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
   },
   headerInfo: {
     flex: 1,
@@ -308,8 +314,6 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     marginBottom: spacing.sm,
   },
-
-  // Status
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -326,8 +330,6 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     fontWeight: typography.fontWeights.medium,
   },
-
-  // Rating
   ratingContainer: {
     marginBottom: spacing.md,
   },
@@ -339,8 +341,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
   },
-
-  // Info Pills
   infoRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -359,8 +359,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
   },
-
-  // Progress Section
   progressSection: {
     backgroundColor: colors.surface,
     padding: spacing.md,
@@ -401,8 +399,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
   },
-
-  // Action Buttons
   actionButtons: {
     marginBottom: spacing.xl,
   },
@@ -414,12 +410,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.md,
     flexDirection: 'row',
-    // Add subtle shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
   buttonIcon: {
     marginRight: spacing.xs,
@@ -450,8 +440,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: typography.fontWeights.medium,
   },
-
-  // Sections
   section: {
     marginBottom: spacing.xl,
   },
@@ -461,8 +449,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     marginBottom: spacing.md,
   },
-
-  // Genres
   genresContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -481,15 +467,13 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: typography.fontWeights.medium,
   },
-
-  // Description
   description: {
     fontSize: typography.fontSizes.base,
     color: colors.primary,
-    lineHeight: typography.lineHeights.relaxed * typography.fontSizes.base,
+    lineHeight: typography.lineHeights?.relaxed
+      ? typography.lineHeights.relaxed * typography.fontSizes.base
+      : 24,
   },
-
-  // Details Card
   detailsCard: {
     backgroundColor: colors.surface,
     borderRadius: 8,
@@ -514,5 +498,7 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.base,
     color: colors.primary,
     fontWeight: typography.fontWeights.semibold,
+    flex: 1,
+    textAlign: 'right',
   },
 });

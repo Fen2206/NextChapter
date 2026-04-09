@@ -17,7 +17,7 @@ import EditProfileScreen from './screens/EditProfileScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import SurveyScreen from './screens/SurveyScreen';
 import NewPasswordScreen from './screens/NewPasswordScreen';
-import BooksPage from './Fenoon/BooksPage';
+import BooksPage from './screens/BooksPage';
 import LoginScreen from './screens/LoginScreen';
 import ReadingStatsScreen from './screens/ReadingStatsScreen';
 import ReadingViewScreen from './screens/ReadingViewScreen';

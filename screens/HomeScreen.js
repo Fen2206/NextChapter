@@ -5,7 +5,23 @@ import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { colors, typography, spacing } from '../theme';
 
-// Sample book data, later we'll replace this with Google Books API
+// map survey genre ids to club genre tags
+const GENRE_LABEL_MAP = {
+  fiction: 'Fiction',
+  nonfiction: 'Non-Fiction',
+  mystery: 'Mystery',
+  fantasy: 'Fantasy',
+  scifi: 'Scifi',
+  romance: 'Romance',
+  horror: 'Horror',
+  thriller: 'Thriller',
+  biography: 'Biography',
+  selfhelp: 'Self-Help',
+  history: 'History',
+  poetry: 'Poetry',
+};
+
+// Sample book data — will be replaced with Google Books API later
 const SAMPLE_BOOKS = [
   {
     id: 1,
@@ -15,7 +31,7 @@ const SAMPLE_BOOKS = [
     cover: 'https://covers.openlibrary.org/b/isbn/9780451149510-L.jpg',
     currentPage: 721,
     totalPages: 1184,
-    description: 'Welcome to Derry, Maine. It\'s a small city, a place as hauntingly familiar as your own hometown. Only in Derry the haunting is real. They were seven teenagers when they first stumbled upon the horror. Now they are grown-up men and women who have gone out into the big world to gain success and happiness. But the promise they made twenty-eight years ago calls them reunite in the same place where, as teenagers, they battled an evil creature that preyed on the city\'s children.',
+    description: 'Welcome to Derry, Maine...',
     genres: ['Horror', 'Fiction', 'Thriller'],
     isbn: '9780451149510',
   },
@@ -27,7 +43,7 @@ const SAMPLE_BOOKS = [
     cover: 'https://covers.openlibrary.org/b/isbn/9780439023481-L.jpg',
     currentPage: 0,
     totalPages: 374,
-    description: 'In the ruins of a place once known as North America lies the nation of Panem, a shining Capitol surrounded by twelve outlying districts. The Capitol keeps the districts in line by forcing them all to send one boy and one girl between the ages of twelve and eighteen to participate in the annual Hunger Games, a fight to the death on live TV.',
+    description: 'In the ruins of a place once known as North America...',
     genres: ['Young Adult', 'Dystopian', 'Science Fiction'],
     isbn: '9780439023481',
   },
@@ -39,7 +55,7 @@ const SAMPLE_BOOKS = [
     cover: 'https://covers.openlibrary.org/b/isbn/9780140007466-L.jpg',
     currentPage: 0,
     totalPages: 180,
-    description: 'The Great Gatsby, F. Scott Fitzgerald\'s third book, stands as the supreme achievement of his career. The story of the mysteriously wealthy Jay Gatsby and his love for the beautiful Daisy Buchanan is an exquisitely crafted tale of America in the 1920s.',
+    description: 'The Great Gatsby, F. Scott Fitzgerald\'s third book...',
     genres: ['Classic', 'Fiction', 'Romance'],
     isbn: '9780140007466',
   },
@@ -48,6 +64,10 @@ const SAMPLE_BOOKS = [
 export default function HomeScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [currentlyReading, setCurrentlyReading] = useState([]);
+  const [recommendedBooks, setRecommendedBooks] = useState([]);
+  const [recommendedClubs, setRecommendedClubs] = useState([]);
+  const [joinedClubIds, setJoinedClubIds] = useState([]);
+  const [joiningClubId, setJoiningClubId] = useState(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -55,15 +75,19 @@ export default function HomeScreen({ navigation }) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // Fetch user's profile for personalized greeting
+        // fetch profile + preferences
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('username, display_name')
+          .select('username, display_name, preferences')
           .eq('id', user.id)
           .single();
         setProfile(profileData);
 
-        // Fetch currently reading books
+        // load recommended books from survey preferences
+        const savedBooks = profileData?.preferences?.recommendedBooks || [];
+        setRecommendedBooks(savedBooks);
+
+        // fetch currently reading books
         const { data: readingData } = await supabase
           .from('user_books')
           .select(`
@@ -81,10 +105,78 @@ export default function HomeScreen({ navigation }) {
           .eq('user_id', user.id)
           .eq('status', 'reading');
         setCurrentlyReading(readingData || []);
+
+        // fetch clubs user is already a member of
+        const { data: memberData } = await supabase
+          .from('club_memberships')
+          .select('club_id')
+          .eq('user_id', user.id);
+        const alreadyJoined = (memberData || []).map((m) => m.club_id);
+        setJoinedClubIds(alreadyJoined);
+
+        // fetch recommended clubs based on survey preferences
+        await fetchRecommendedClubs(profileData?.preferences, alreadyJoined);
       };
       fetchData();
     }, [])
   );
+
+  const fetchRecommendedClubs = async (preferences, alreadyJoined = []) => {
+    try {
+      const userGenres = preferences?.genres || [];
+      const genreLabels = userGenres.map((id) => GENRE_LABEL_MAP[id]).filter(Boolean);
+
+      // fetch all public clubs
+      const { data: clubs } = await supabase
+        .from('clubs')
+        .select('id, name, description, genres, is_public')
+        .eq('is_public', true);
+
+      if (!clubs) return;
+
+      const filtered = clubs.filter((c) => !alreadyJoined.includes(c.id));
+
+      if (genreLabels.length > 0) {
+        // score by genre overlap
+        const scored = filtered
+          .map((c) => {
+            const clubGenres = c.genres || [];
+            const overlap = genreLabels.filter((g) =>
+              clubGenres.some((cg) => cg.toLowerCase() === g.toLowerCase())
+            ).length;
+            return { ...c, score: overlap };
+          })
+          .filter((c) => c.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5);
+
+        // fall back to first 5 public clubs if no genre matches
+        setRecommendedClubs(scored.length > 0 ? scored : filtered.slice(0, 5));
+      } else {
+        // no survey taken yet — show first 5 public clubs
+        setRecommendedClubs(filtered.slice(0, 5));
+      }
+    } catch (err) {
+      console.log('Fetch recommended clubs error:', err.message);
+    }
+  };
+
+  const handleJoinClub = async (clubId) => {
+    setJoiningClubId(clubId);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('club_memberships')
+        .insert({ club_id: clubId, user_id: user.id, role: 'member' });
+      if (!error) {
+        setJoinedClubIds((prev) => [...prev, clubId]);
+      }
+    } catch (err) {
+      console.log('Join club error:', err.message);
+    } finally {
+      setJoiningClubId(null);
+    }
+  };
 
   const handleBookPress = (book) => {
     navigation.navigate('BookDetails', { book });
@@ -95,16 +187,19 @@ export default function HomeScreen({ navigation }) {
     alert(`Starting to read: ${book.title}\n(Reading view coming soon!)`);
   };
 
+  const handleClubPress = (club) => {
+    navigation.navigate('Community');
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.content}>
+
         {/* Welcome Section */}
         <Text style={styles.title}>
           Welcome, {profile?.display_name || profile?.username || 'Reader'}
         </Text>
-        <Text style={styles.subtitle}>
-          Discover your next great read
-        </Text>
+        <Text style={styles.subtitle}>Discover your next great read</Text>
 
         {/* Continue Reading Section */}
         {currentlyReading.length > 0 && (
@@ -118,7 +213,6 @@ export default function HomeScreen({ navigation }) {
               const authors = Array.isArray(book?.authors)
                 ? book.authors.join(', ')
                 : book?.authors || '';
-
               return (
                 <TouchableOpacity
                   key={userBook.id}
@@ -132,23 +226,17 @@ export default function HomeScreen({ navigation }) {
                     resizeMode="cover"
                   />
                   <View style={styles.currentlyReadingInfo}>
-                    <Text style={styles.bookTitle} numberOfLines={2}>
-                      {book?.title}
-                    </Text>
+                    <Text style={styles.bookTitle} numberOfLines={2}>{book?.title}</Text>
                     <Text style={styles.bookAuthor}>{authors}</Text>
-
-                    {/* Progress Bar */}
                     <View style={styles.progressContainer}>
                       <View style={styles.progressBar}>
                         <View style={[styles.progressFill, { width: `${progress}%` }]} />
                       </View>
                       <Text style={styles.progressText}>{progress}%</Text>
                     </View>
-
                     <Text style={styles.pageCount}>
                       Page {userBook.current_page} of {book?.page_count}
                     </Text>
-
                     <TouchableOpacity
                       style={styles.continueButton}
                       onPress={() => handleBeginReading(book)}
@@ -163,7 +251,7 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* Recommended for You Section */}
+        {/* Recommended for You — Books */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recommended for You</Text>
@@ -171,13 +259,8 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.horizontalScroll}
-          >
-            {SAMPLE_BOOKS.map((book) => (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+            {(recommendedBooks.length > 0 ? recommendedBooks : SAMPLE_BOOKS).map((book) => (
               <BookCard
                 key={book.id}
                 book={book}
@@ -188,7 +271,35 @@ export default function HomeScreen({ navigation }) {
           </ScrollView>
         </View>
 
-        {/* Popular This Week Section */}
+        {/* Recommended Clubs for You */}
+        {recommendedClubs.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recommended Clubs</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Community')}>
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+              {recommendedClubs.map((club) => {
+                const joined = joinedClubIds.includes(club.id);
+                const joining = joiningClubId === club.id;
+                return (
+                  <ClubCard
+                    key={club.id}
+                    club={club}
+                    joined={joined}
+                    joining={joining}
+                    onPress={() => handleClubPress(club)}
+                    onJoin={() => handleJoinClub(club.id)}
+                  />
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Popular This Week */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Popular This Week</Text>
@@ -196,12 +307,7 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.horizontalScroll}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
             {SAMPLE_BOOKS.slice().reverse().map((book) => (
               <BookCard
                 key={book.id}
@@ -212,43 +318,77 @@ export default function HomeScreen({ navigation }) {
             ))}
           </ScrollView>
         </View>
+
       </View>
     </ScrollView>
   );
 }
 
-// Book Card Component — unchanged
+// Book Card — unchanged from original
 function BookCard({ book, onPress, onBeginReading }) {
   return (
-    <TouchableOpacity
-      style={styles.bookCard}
-      onPress={onPress}
-      activeOpacity={0.8}
-    >
+    <TouchableOpacity style={styles.bookCard} onPress={onPress} activeOpacity={0.8}>
       <Image
-        source={{ uri: book.cover }}
+        source={{ uri: book.cover || book.cover_url || 'https://via.placeholder.com/140x210?text=No+Cover' }}
         style={styles.bookCover}
         resizeMode="cover"
       />
       <Text style={styles.cardTitle} numberOfLines={2}>{book.title}</Text>
-      <Text style={styles.cardAuthor} numberOfLines={1}>{book.author}</Text>
-
-      {/* Star Rating */}
+      <Text style={styles.cardAuthor} numberOfLines={1}>
+        {Array.isArray(book.author) ? book.author[0] : book.author || ''}
+      </Text>
       <View style={styles.ratingContainer}>
         <Ionicons name="star" size={14} color="#FFD700" />
-        <Text style={styles.ratingText}>{book.rating}</Text>
+        <Text style={styles.ratingText}>{book.rating ? book.rating.toFixed(2) : 'N/A'}</Text>
       </View>
-
       <TouchableOpacity
         style={styles.beginButton}
-        onPress={(e) => {
-          e.stopPropagation();
-          onBeginReading();
-        }}
+        onPress={(e) => { e.stopPropagation(); onBeginReading(); }}
       >
         <Text style={styles.beginButtonText}>
           {book.currentPage > 0 ? 'Continue' : 'Begin Reading'}
         </Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+}
+
+// Club Card for horizontal row
+function ClubCard({ club, joined, joining, onPress, onJoin }) {
+  return (
+    <TouchableOpacity style={styles.clubCard} onPress={onPress} activeOpacity={0.8}>
+      {/* Club icon */}
+      <View style={styles.clubIconContainer}>
+        <Ionicons name="people" size={28} color={colors.buttonPrimary} />
+      </View>
+
+      <Text style={styles.clubCardName} numberOfLines={2}>{club.name}</Text>
+
+      {club.description ? (
+        <Text style={styles.clubCardDesc} numberOfLines={2}>{club.description}</Text>
+      ) : null}
+
+      {/* Genre tags */}
+      {club.genres?.length > 0 && (
+        <View style={styles.clubGenreRow}>
+          {club.genres.slice(0, 2).map((g) => (
+            <View key={g} style={styles.clubGenreTag}>
+              <Text style={styles.clubGenreTagText}>{g}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <TouchableOpacity
+        style={[styles.clubJoinButton, joined && styles.clubJoinButtonDone]}
+        onPress={(e) => { e.stopPropagation(); !joined && onJoin(); }}
+        disabled={joined || joining}
+      >
+        {joining ? (
+          <Text style={styles.clubJoinButtonText}>Joining...</Text>
+        ) : (
+          <Text style={styles.clubJoinButtonText}>{joined ? '✓ Joined' : 'Join Club'}</Text>
+        )}
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -370,10 +510,12 @@ const styles = StyleSheet.create({
     marginRight: spacing.xs,
   },
 
-  // Book Card Styles
+  // Horizontal scroll rows
   horizontalScroll: {
     paddingLeft: spacing.lg,
   },
+
+  // Book Card
   bookCard: {
     width: 140,
     marginRight: spacing.md,
@@ -416,6 +558,70 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   beginButtonText: {
+    color: colors.buttonText,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+  },
+
+  // Club Card
+  clubCard: {
+    width: 180,
+    marginRight: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  clubIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: `${colors.buttonPrimary}15`,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  clubCardName: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.primary,
+    marginBottom: spacing.xs,
+  },
+  clubCardDesc: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.secondary,
+    lineHeight: 16,
+    marginBottom: spacing.sm,
+  },
+  clubGenreRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginBottom: spacing.sm,
+  },
+  clubGenreTag: {
+    backgroundColor: colors.border,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  clubGenreTagText: {
+    fontSize: 10,
+    color: colors.secondary,
+    fontWeight: '500',
+  },
+  clubJoinButton: {
+    backgroundColor: colors.buttonPrimary,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 'auto',
+  },
+  clubJoinButtonDone: {
+    backgroundColor: colors.secondary,
+  },
+  clubJoinButtonText: {
     color: colors.buttonText,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
