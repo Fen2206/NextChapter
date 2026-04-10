@@ -461,7 +461,14 @@ export default function MyBooksScreen({ navigation }) {
   const handleContinueReading = async (book) => {
     try {
       if (book.url) {
-        navigation.navigate('Reader', { book, url: book.url });
+        navigation.navigate('ReadingView', {
+        book: {
+          ...book,
+          currentPage: book.currentPage || 1,
+          pageCount: book.pageCount || book.totalPages || 0,
+        },
+        url: book.url,
+      });
         return;
       }
 
@@ -470,9 +477,9 @@ export default function MyBooksScreen({ navigation }) {
 
       if (m) {
         const id = m[1];
-        const candidate = `https://www.gutenberg.org/cache/epub/${id}/pg${id}.txt`;
+        const candidate = `https://www.gutenberg.org/ebooks/${id}.txt.utf-8`;
 
-        navigation.navigate('Reader', {
+        navigation.navigate('ReadingView', {
           book: {
             title: book.title,
             author: book.author,
@@ -480,6 +487,8 @@ export default function MyBooksScreen({ navigation }) {
             source: 'gutenberg',
             externalId: id,
             id,
+            currentPage: book.currentPage || 1,
+            pageCount: book.pageCount || book.totalPages || 0,
           },
           url: candidate,
         });

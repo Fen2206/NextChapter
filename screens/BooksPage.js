@@ -400,38 +400,27 @@ function SectionRow({
                     </Text>
 
                     <View style={styles.cardMetaRow}>
-                      <Text style={styles.cardMeta} numberOfLines={1}>
-                        {b.pages ? `${b.pages} pages` : "Pages N/A"}
-                      </Text>
+  {typeof b.rating === "number" ? (
+    <View style={styles.ratingRow}>
+      <Ionicons name="star" size={14} color="#f5c400" />
+      <Text style={styles.cardRating} numberOfLines={1}>
+        {b.rating.toFixed(1)}
+      </Text>
+    </View>
+  ) : (
+    <Text style={styles.noRating} numberOfLines={1}>
+      No rating
+    </Text>
+  )}
 
-                      {b.source === "gutenberg" && b.fullTextAvailable ? (
-                        <Text style={styles.fullTextBadge} numberOfLines={1}>
-                          Full text
-                        </Text>
-                      ) : b.hasVerifiedPreview ? (
-                        <Text style={styles.previewBadge} numberOfLines={1}>
-                          Preview
-                        </Text>
-                      ) : typeof b.rating === "number" ? (
-                        <View style={styles.ratingRow}>
-                          <Ionicons name="star" size={12} color="#f5c400" />
-                          <Text style={styles.cardRating} numberOfLines={1}>
-                            {b.rating.toFixed(2)}
-                            {b.ratingsCount
-                              ? ` · ${formatCount(b.ratingsCount)}`
-                              : ""}
-                          </Text>
-                        </View>
-                      ) : hasPreview ? (
-                        <Text style={styles.previewBadge} numberOfLines={1}>
-                          Preview
-                        </Text>
-                      ) : (
-                        <Text style={styles.noRating} numberOfLines={1}>
-                          No rating
-                        </Text>
-                      )}
-                    </View>
+  {(b.source === "gutenberg" && b.fullTextAvailable) ||
+  b.hasVerifiedPreview ||
+  hasPreview ? (
+    <Text style={styles.previewBadge} numberOfLines={1}>
+      Preview
+    </Text>
+  ) : null}
+</View>
 
                     <TouchableOpacity
                       style={styles.beginBtn}
@@ -720,7 +709,7 @@ export default function BooksPage() {
           return;
         }
 
-        navigation.navigate("Reader", {
+        navigation.navigate("ReadingView", {
           book: { ...b, source: "gutenberg", externalId: b.id },
           url: b.textUrl,
         });

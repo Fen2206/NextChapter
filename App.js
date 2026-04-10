@@ -5,6 +5,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import { useEffect, useRef } from 'react';
+import ClubDetailScreen from './screens/ClubDetailScreen';
 import { supabase } from './lib/supabase';
 
 // Import all of the screens
@@ -21,6 +22,8 @@ import BooksPage from './screens/BooksPage';
 import LoginScreen from './screens/LoginScreen';
 import ReadingStatsScreen from './screens/ReadingStatsScreen';
 import ReadingViewScreen from './screens/ReadingViewScreen';
+//import BookClubScreen from './screens/BookClubScreen';
+
 
 // Import theme
 import theme from './theme';
@@ -50,6 +53,8 @@ function HomeStack() {
     </Stack.Navigator>
   );
 }
+
+
 
 // Search Stack
 function SearchStack() {
@@ -87,6 +92,24 @@ function MyBooksStack() {
         }}
       />
       <Stack.Screen name="ReadingView" component={ReadingViewScreen} options={{ headerShown: false }} />
+    </Stack.Navigator>
+  );
+}
+
+function CommunityStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="CommunityMain" component={CommunityScreen} />
+      <Stack.Screen
+        name="ClubDetail"
+        component={ClubDetailScreen}
+        options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: colors.navBackground },
+          headerTintColor: colors.navText,
+          headerTitle: 'Book Club',
+        }}
+      />
     </Stack.Navigator>
   );
 }
@@ -160,7 +183,7 @@ function DrawerNavigator() {
       />
       <Drawer.Screen
         name="Community"
-        component={CommunityScreen}
+        component={CommunityStack}
         options={{
           drawerLabel: 'Community',
           drawerIcon: ({ focused, color, size }) => (

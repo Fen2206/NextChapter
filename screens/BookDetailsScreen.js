@@ -361,12 +361,21 @@ export default function BookDetailsScreen({ route, navigation }) {
 
   const statusInfo = getStatusInfo();
 
+  const hasImmediateAccess =
+    book.source === 'gutenberg'
+      ? !!book.textUrl
+      : !!pickPreviewUrl(book);
+
   const mainButtonLabel =
-    libraryState.readingStatus === 'reading'
-      ? 'Continue Reading'
-      : libraryState.readingStatus === 'completed'
-      ? 'Read Again'
-      : 'Begin Reading';
+    book.source === 'gutenberg'
+      ? libraryState.readingStatus === 'reading'
+        ? 'Continue Reading'
+        : 'Read Full Text'
+      : hasImmediateAccess
+      ? libraryState.readingStatus === 'reading'
+        ? 'Continue Preview'
+        : 'Read Preview'
+      : 'Find Preview';
 
   const mainButtonIcon =
     libraryState.readingStatus === 'reading' ? 'play' : 'book-outline';
@@ -448,58 +457,87 @@ export default function BookDetailsScreen({ route, navigation }) {
     return data;
   };
 
-  const handleOpenReading = async () => {
+  const resolveReadableTarget = async () => {
     if (book.source === 'gutenberg') {
-      if (!book.textUrl) {
-        Alert.alert('Not available', 'No text format for this book.');
-        return;
-      }
-
-      navigation.navigate('Reader', {
-        book: {
-          ...book,
-          source: 'gutenberg',
-          externalId: book.id,
-          currentPage: libraryState.currentPage || 1,
-        },
-        url: book.textUrl,
-      });
-      return;
+      if (!book.textUrl) return { type: 'none' };
+      return { type: 'reader', url: book.textUrl };
     }
 
     if (book.source === 'google') {
       const url = pickPreviewUrl(book);
-      if (!url) {
-        Alert.alert('No preview available');
-        return;
-      }
-      setPreviewUrl(url);
-      return;
+      if (!url) return { type: 'none' };
+      return { type: 'preview', url };
     }
 
     if (book.source === 'dataset') {
-      const url = await googlePreviewForDatasetBook({
+      const existingPreview = pickPreviewUrl(book);
+      if (existingPreview) {
+        return { type: 'preview', url: existingPreview };
+      }
+
+      const fallbackUrl = await googlePreviewForDatasetBook({
         title: book.title,
         author: book.author,
         isbn: book.isbn !== 'N/A' ? book.isbn : null,
       });
 
-      if (!url) {
-        Alert.alert('No preview', "Google Books doesn't have a preview for this title.");
-        return;
+      if (fallbackUrl) {
+        return { type: 'preview', url: fallbackUrl };
       }
 
-      setPreviewUrl(url);
-      return;
+      return { type: 'none' };
     }
 
-    Alert.alert('Unavailable', 'This book cannot be opened yet.');
+    return { type: 'none' };
+  };
+
+  const openReadableTarget = (target, pageToUse) => {
+    if (target.type === 'reader') {
+      navigation.navigate('ReadingView', {
+        book: {
+          ...book,
+          source: 'gutenberg',
+          externalId: book.id,
+          currentPage: pageToUse,
+        },
+        url: target.url,
+      });
+      return true;
+    }
+
+    if (target.type === 'preview') {
+      setPreviewUrl(target.url);
+      return true;
+    }
+
+    return false;
   };
 
   const handleBeginOrContinueReading = async () => {
     try {
-      const { data: authData } = await supabase.auth.getUser();
+      const pageToUse =
+        libraryState.readingStatus === 'reading' && libraryState.currentPage > 0
+          ? libraryState.currentPage
+          : 1;
+
+      const target = await resolveReadableTarget();
+
+      if (target.type === 'none') {
+        Alert.alert(
+          'Preview unavailable',
+          'This book does not have a readable preview yet.'
+        );
+        return;
+      }
+
+      const opened = openReadableTarget(target, pageToUse);
+      if (!opened) return;
+
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+
       const user = authData?.user;
+      if (!user) return;
 
       let internalBookId = libraryState.internalBookId;
       if (!internalBookId) {
@@ -507,31 +545,24 @@ export default function BookDetailsScreen({ route, navigation }) {
         internalBookId = createdBook.id;
       }
 
-      const pageToUse =
-        libraryState.readingStatus === 'reading' && libraryState.currentPage > 0
-          ? libraryState.currentPage
-          : 1;
+      const userBook = await upsertUserBookReading(internalBookId, pageToUse);
 
-      if (user) {
-        const userBook = await upsertUserBookReading(internalBookId, pageToUse);
-
-        setLibraryState((prev) => ({
-          ...prev,
-          internalBookId,
-          userBookId: userBook?.id ?? prev.userBookId,
-          readingStatus: 'reading',
-          currentPage: userBook?.current_page ?? pageToUse,
-          progress:
-            book.pageCount > 0
-              ? Math.min(
-                  100,
-                  Math.round(((userBook?.current_page ?? pageToUse) / book.pageCount) * 100)
+      setLibraryState((prev) => ({
+        ...prev,
+        internalBookId,
+        userBookId: userBook?.id ?? prev.userBookId,
+        readingStatus: 'reading',
+        currentPage: userBook?.current_page ?? pageToUse,
+        progress:
+          book.pageCount > 0
+            ? Math.min(
+                100,
+                Math.round(
+                  ((userBook?.current_page ?? pageToUse) / book.pageCount) * 100
                 )
-              : prev.progress,
-        }));
-      }
-
-      await handleOpenReading();
+              )
+            : prev.progress,
+      }));
     } catch (e) {
       Alert.alert('Open failed', e?.message ?? 'Unknown error');
     }
@@ -726,8 +757,8 @@ export default function BookDetailsScreen({ route, navigation }) {
   };
 
   const handleJoinBookClub = () => {
-    navigation.navigate('Community');
-  };
+  navigation.getParent()?.navigate('Community');
+};
 
   if (!incomingBook) {
     return (
@@ -749,6 +780,22 @@ export default function BookDetailsScreen({ route, navigation }) {
   return (
     <>
       <ScrollView style={styles.container}>
+        <View style={styles.topBackRow}>
+          <TouchableOpacity
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('SearchMain');
+              }
+            }}
+            style={styles.topBackButton}
+          >
+            <Ionicons name="chevron-back" size={22} color={colors.primary} />
+            <Text style={styles.topBackText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.content}>
           <View style={styles.headerSection}>
             <View style={styles.coverContainer}>
@@ -850,7 +897,7 @@ export default function BookDetailsScreen({ route, navigation }) {
             </View>
           )}
 
-          <View style={styles.actionButtons}>
+          <View style={styles.actionButtonsBlock}>
             <TouchableOpacity
               style={styles.primaryButton}
               onPress={handleBeginOrContinueReading}
@@ -1093,6 +1140,30 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.lg,
+    paddingTop: 0,
+  },
+
+  topBackRow: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  topBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  topBackText: {
+    marginLeft: spacing.xs,
+    color: colors.primary,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
   },
 
   errorStateTitle: {
@@ -1242,12 +1313,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.buttonPrimary,
     borderRadius: 4,
   },
-  progressText: {
-    fontSize: typography.fontSizes.sm,
-    color: colors.secondary,
-  },
 
-  actionButtons: {
+  actionButtonsBlock: {
     marginBottom: spacing.xl,
   },
   primaryButton: {
