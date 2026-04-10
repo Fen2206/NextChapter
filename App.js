@@ -11,6 +11,8 @@ import { supabase } from './lib/supabase';
 // Import all of the screens
 import BookDetailsScreen from './screens/BookDetailsScreen';
 import CommunityScreen from './screens/CommunityScreen';
+import ClubDetailScreen from './screens/ClubDetailScreen';
+import DiscussionThreadScreen from './screens/DiscussionThreadScreen';
 import HomeScreen from './screens/HomeScreen';
 import MyBooksScreen from './screens/MyBooksScreen';
 import ProfileScreen from './screens/ProfileScreen';
@@ -38,7 +40,7 @@ const prefix = Linking.createURL('/');
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="HomeMain" component={HomeScreen} />
+      <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen
         name="BookDetails"
         component={BookDetailsScreen}
@@ -60,7 +62,7 @@ function HomeStack() {
 function SearchStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="SearchMain" component={BooksPage} />
+      <Stack.Screen name="Search" component={BooksPage} />
       <Stack.Screen
         name="BookDetails"
         component={BookDetailsScreen}
@@ -80,7 +82,7 @@ function SearchStack() {
 function MyBooksStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="MyBooksMain" component={MyBooksScreen} />
+      <Stack.Screen name="MyBooks" component={MyBooksScreen} />
       <Stack.Screen
         name="BookDetails"
         component={BookDetailsScreen}
@@ -118,7 +120,7 @@ function CommunityStack() {
 function ProfileStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen
         name="ReadingStats"
         component={ReadingStatsScreen}
@@ -127,6 +129,34 @@ function ProfileStack() {
           headerStyle: { backgroundColor: colors.navBackground },
           headerTintColor: colors.navText,
           headerTitle: 'Reading Statistics',
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function CommunityStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Community" component={CommunityScreen} />
+      <Stack.Screen
+        name="ClubDetail"
+        component={ClubDetailScreen}
+        options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: colors.navBackground },
+          headerTintColor: colors.navText,
+          headerTitle: 'Book Club',
+        }}
+      />
+      <Stack.Screen
+        name="DiscussionThread"
+        component={DiscussionThreadScreen}
+        options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: colors.navBackground },
+          headerTintColor: colors.navText,
+          headerTitle: 'Discussion',
         }}
       />
     </Stack.Navigator>
@@ -185,12 +215,14 @@ function DrawerNavigator() {
         name="Community"
         component={CommunityStack}
         options={{
+          headerShown: false,
           drawerLabel: 'Community',
           drawerIcon: ({ focused, color, size }) => (
             <Ionicons name={focused ? 'people' : 'people-outline'} size={size} color={color} />
           ),
         }}
       />
+
       <Drawer.Screen
         name="Profile"
         component={ProfileStack}
@@ -209,7 +241,6 @@ function DrawerNavigator() {
 export default function App() {
   const navigationRef = useRef(null);
 
-  // handle deep links for any future use
   useEffect(() => {
     const subscription = Linking.addEventListener('url', () => {});
     return () => subscription.remove();

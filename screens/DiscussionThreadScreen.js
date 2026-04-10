@@ -6,23 +6,16 @@
 //   message_reactions → message_id (= comment id), user_id, emoji, created_at
 //                       (message_id, user_id, emoji)
 
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TextInput,
+  TouchableOpacity, KeyboardAvoidingView, Platform,
+  Image, Alert, ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  KeyboardAvoidingView, Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
 import { supabase } from '../lib/supabase';
-import { colors, spacing, typography } from '../theme';
+import { colors, typography, spacing } from '../theme';
 
 // Emoji options
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '🎉', '🤔'];
@@ -36,8 +29,11 @@ export default function DiscussionThreadScreen({ route, navigation }) {
   const [sending, setSending] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [reactionPickerFor, setReactionPickerFor] = useState(null); // comment id
+  const [replyingTo, setReplyingTo] = useState(null); // { id, displayName, body }
   const scrollViewRef = useRef(null);
+  const inputRef = useRef(null);
 
+  // Get current user once on mount
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setCurrentUser(user));
   }, []);
@@ -139,12 +135,13 @@ export default function DiscussionThreadScreen({ route, navigation }) {
           thread_id: thread.id,
           user_id: user.id,
           body,
-          reply_to: null,
+          reply_to: replyingTo?.id ?? null,
         });
 
       if (error) throw error;
 
       setInputText('');
+      setReplyingTo(null);
       await fetchComments();
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
     } catch (error) {
@@ -193,6 +190,14 @@ export default function DiscussionThreadScreen({ route, navigation }) {
 
   const chapterLabel = thread?.chapter || 'General Discussion';
   const threadTitle = thread?.title || 'Discussion';
+  const isSpoilerThread = thread?.tag === 'Spoilers';
+
+  // Tracks messages and reveals if the user has chosen to reveal
+  const [revealedSpoilers, setRevealedSpoilers] = useState({});
+
+  const handleRevealSpoiler = (commentId) => {
+    setRevealedSpoilers(prev => ({ ...prev, [commentId]: true }));
+  };
 
   return (
     <KeyboardAvoidingView
@@ -210,6 +215,16 @@ export default function DiscussionThreadScreen({ route, navigation }) {
           {comments.length} {comments.length === 1 ? 'comment' : 'comments'}
         </Text>
       </View>
+
+      {/* Spoiler Warning Banner */}
+      {isSpoilerThread && (
+        <View style={styles.spoilerBanner}>
+          <Ionicons name="warning" size={18} color="#C62828" />
+          <Text style={styles.spoilerBannerText}>
+            ⚠️ Spoiler Thread — messages are hidden by default. Tap to reveal each one.
+          </Text>
+        </View>
+      )}
 
       {/* Messages */}
       {loading ? (
@@ -237,14 +252,23 @@ export default function DiscussionThreadScreen({ route, navigation }) {
                 <MessageBubble
                   key={comment.id}
                   comment={comment}
+                  allComments={comments}
                   showAvatar={showAvatar}
                   currentUserId={currentUser?.id}
                   reactionPickerOpen={reactionPickerFor === comment.id}
+                  isSpoilerThread={isSpoilerThread}
+                  isRevealed={revealedSpoilers[comment.id] ?? false}
+                  onReveal={() => handleRevealSpoiler(comment.id)}
                   onLongPress={() => setReactionPickerFor(
                     reactionPickerFor === comment.id ? null : comment.id
                   )}
                   onReaction={(emoji) => handleReaction(comment.id, emoji)}
                   onCloseReactionPicker={() => setReactionPickerFor(null)}
+                  onReply={() => {
+                    setReplyingTo({ id: comment.id, displayName: comment.displayName, body: comment.body });
+                    setReactionPickerFor(null);
+                    setTimeout(() => inputRef.current?.focus(), 100);
+                  }}
                 />
               );
             })
@@ -255,10 +279,26 @@ export default function DiscussionThreadScreen({ route, navigation }) {
 
       {/* Input Bar */}
       <View style={styles.inputContainer}>
+        {/* Reply preview banner */}
+        {replyingTo && (
+          <View style={styles.replyBanner}>
+            <View style={styles.replyBannerLeft}>
+              <Ionicons name="return-down-forward" size={14} color={colors.buttonPrimary} />
+              <View style={styles.replyBannerText}>
+                <Text style={styles.replyBannerName}>Replying to {replyingTo.displayName}</Text>
+                <Text style={styles.replyBannerBody} numberOfLines={1}>{replyingTo.body}</Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyBannerClose}>
+              <Ionicons name="close" size={18} color={colors.secondary} />
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={styles.inputWrapper}>
           <TextInput
+            ref={inputRef}
             style={styles.input}
-            placeholder="Share your thoughts..."
+            placeholder={replyingTo ? `Reply to ${replyingTo.displayName}...` : "Share your thoughts..."}
             placeholderTextColor={colors.secondary}
             value={inputText}
             onChangeText={setInputText}
@@ -282,8 +322,18 @@ export default function DiscussionThreadScreen({ route, navigation }) {
 }
 
 // Message Bubble
-function MessageBubble({ comment, showAvatar, currentUserId, reactionPickerOpen, onLongPress, onReaction, onCloseReactionPicker }) {
+
+function MessageBubble({ comment, allComments, showAvatar, currentUserId, reactionPickerOpen, isSpoilerThread, isRevealed, onReveal, onLongPress, onReaction, onCloseReactionPicker, onReply }) {
   const isYou = comment.isCurrentUser;
+
+  // Spoiler, hide message unless revealed
+  // Current user's own messages are never blurred
+  const isBlurred = isSpoilerThread && !isRevealed && !isYou;
+
+  // Find the comment being replied to
+  const repliedToComment = comment.replyTo
+    ? (allComments || []).find(c => c.id === comment.replyTo)
+    : null;
 
   const reactionSummary = Object.entries(comment.reactions)
     .filter(([, users]) => users.length > 0)
@@ -295,7 +345,7 @@ function MessageBubble({ comment, showAvatar, currentUserId, reactionPickerOpen,
 
   return (
     <View style={[styles.messageRow, isYou && styles.messageRowYou]}>
-      {/* Avatar */}
+      {/* Avatar — left side for others */}
       {!isYou && (
         <View style={styles.avatarContainer}>
           {showAvatar
@@ -310,18 +360,51 @@ function MessageBubble({ comment, showAvatar, currentUserId, reactionPickerOpen,
           <Text style={styles.senderName}>{comment.displayName}</Text>
         )}
 
-        <TouchableOpacity
-          style={[styles.bubble, isYou && styles.bubbleYou]}
-          onLongPress={onLongPress}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.bubbleText, isYou && styles.bubbleTextYou]}>
-            {comment.body}
-          </Text>
-          <Text style={[styles.timestamp, isYou && styles.timestampYou]}>
-            {comment.timestamp}
-          </Text>
-        </TouchableOpacity>
+        <View>
+          <TouchableOpacity
+            style={[styles.bubble, isYou && styles.bubbleYou]}
+            onLongPress={isBlurred ? undefined : onLongPress}
+            activeOpacity={0.85}
+          >
+            {/* Quoted reply preview */}
+            {repliedToComment && (
+              <View style={[styles.quotedReply, isYou && styles.quotedReplyYou]}>
+                <Text style={[styles.quotedReplyName, isYou && styles.quotedReplyNameYou]}>
+                  {repliedToComment.displayName}
+                </Text>
+                <Text style={[styles.quotedReplyBody, isYou && styles.quotedReplyBodyYou]} numberOfLines={2}>
+                  {repliedToComment.body}
+                </Text>
+              </View>
+            )}
+            <Text style={[styles.bubbleText, isYou && styles.bubbleTextYou, isBlurred && styles.blurredText]}>
+              {comment.body}
+            </Text>
+            <View style={styles.bubbleFooter}>
+              {!isBlurred && (
+                <TouchableOpacity onPress={onReply} style={styles.replyButton}>
+                  <Ionicons
+                    name="return-down-forward-outline"
+                    size={14}
+                    color={isYou ? 'rgba(255,255,255,0.7)' : colors.secondary}
+                  />
+                  <Text style={[styles.replyButtonText, isYou && styles.replyButtonTextYou]}>Reply</Text>
+                </TouchableOpacity>
+              )}
+              <Text style={[styles.timestamp, isYou && styles.timestampYou]}>
+                {comment.timestamp}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Spoiler reveal overlay */}
+          {isBlurred && (
+            <TouchableOpacity style={styles.spoilerOverlay} onPress={onReveal} activeOpacity={0.8}>
+              <Ionicons name="eye-off" size={20} color="#fff" />
+              <Text style={styles.spoilerOverlayText}>Tap to reveal spoiler</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* Reaction chips */}
         {reactionSummary.length > 0 && (
@@ -357,7 +440,7 @@ function MessageBubble({ comment, showAvatar, currentUserId, reactionPickerOpen,
         )}
       </View>
 
-      {/* Avatar*/}
+      {/* Avatar — right side for current user */}
       {isYou && (
         <View style={styles.avatarContainer}>
           {showAvatar
@@ -439,6 +522,35 @@ const styles = StyleSheet.create({
   reactionPickerEmoji: { padding: 6 },
   reactionPickerEmojiText: { fontSize: 22 },
 
+  // Spoiler styles
+  spoilerBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: '#FFEBEE', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: '#EF9A9A' },
+  spoilerBannerText: { flex: 1, fontSize: typography.fontSizes.xs, color: '#C62828', fontWeight: typography.fontWeights.medium, lineHeight: typography.fontSizes.xs * 1.6 },
+  blurredText: { color: 'transparent', textShadowColor: colors.secondary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 8 },
+  spoilerOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(80,80,80,0.7)', borderRadius: 16, borderBottomLeftRadius: 4, justifyContent: 'center', alignItems: 'center', gap: spacing.xs, flexDirection: 'row' },
+  spoilerOverlayText: { color: '#fff', fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold },
+
+  // Reply banner above input
+  replyBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderLeftWidth: 3, borderLeftColor: colors.buttonPrimary },
+  replyBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  replyBannerText: { flex: 1 },
+  replyBannerName: { fontSize: typography.fontSizes.xs, fontWeight: typography.fontWeights.semibold, color: colors.buttonPrimary },
+  replyBannerBody: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 1 },
+  replyBannerClose: { padding: spacing.xs },
+
+  // Quoted reply inside bubble
+  quotedReply: { backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 8, borderLeftWidth: 3, borderLeftColor: colors.secondary, padding: spacing.sm, marginBottom: spacing.sm },
+  quotedReplyYou: { backgroundColor: 'rgba(255,255,255,0.15)', borderLeftColor: 'rgba(255,255,255,0.6)' },
+  quotedReplyName: { fontSize: typography.fontSizes.xs, fontWeight: typography.fontWeights.semibold, color: colors.secondary, marginBottom: 2 },
+  quotedReplyNameYou: { color: 'rgba(255,255,255,0.8)' },
+  quotedReplyBody: { fontSize: typography.fontSizes.xs, color: colors.secondary },
+  quotedReplyBodyYou: { color: 'rgba(255,255,255,0.7)' },
+
+  // Reply button inside bubble
+  bubbleFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xs },
+  replyButton: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  replyButtonText: { fontSize: typography.fontSizes.xs, color: colors.secondary },
+  replyButtonTextYou: { color: 'rgba(255,255,255,0.7)' },
+
   // Input bar
   inputContainer: { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.md },
   inputWrapper: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
@@ -446,4 +558,3 @@ const styles = StyleSheet.create({
   sendButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.buttonPrimary, justifyContent: 'center', alignItems: 'center' },
   sendButtonDisabled: { backgroundColor: colors.border },
 });
-
