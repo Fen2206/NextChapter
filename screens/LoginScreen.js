@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   Image,
+  ImageBackground,
   Keyboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -47,7 +48,7 @@ export default function LoginScreen() {
         password: loginForm.password,
       });
       if (error) throw error;
-      navigation.replace('Home');
+      navigation.replace('Main');
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {
@@ -154,8 +155,7 @@ export default function LoginScreen() {
   // ─── Choice Screen ──
   if (currentView === 'choice') {
     return (
-      <View style={styles.container}>
-        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
+      <ImageBackground source={require('../assets/background.png')} style={styles.container} resizeMode="cover">
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Welcome to</Text>
           <Text style={styles.appName}>Next Chapter</Text>
@@ -173,16 +173,16 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </ImageBackground>
     );
   }
 
   // ─── Login Form ───
   if (currentView === 'login') {
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
-        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
-        <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
+      <ImageBackground source={require('../assets/background.png')} style={styles.container} resizeMode="cover">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+          <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
           <View style={styles.formCard}>
             <Text style={styles.title}>Welcome Back!</Text>
             <Text style={styles.subtitle}>Sign in to continue reading</Text>
@@ -235,16 +235,17 @@ export default function LoginScreen() {
             </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </ImageBackground>
     );
   }
 
   // ─── Register Form ────
   if (currentView === 'register') {
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
-        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
-        <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
+      <ImageBackground source={require('../assets/background.png')} style={styles.container} resizeMode="cover">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+          <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
           <View style={styles.formCard}>
             <Text style={styles.title}>New Reader?</Text>
             <Text style={styles.subtitle}>Join the Next Chapter Community!</Text>
@@ -316,16 +317,17 @@ export default function LoginScreen() {
             </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </ImageBackground>
     );
   }
 
   // ─── Forgot Password: Step 1 — Enter Email ────
   if (currentView === 'forgotEmail') {
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
-        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
-        <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
+      <ImageBackground source={require('../assets/background.png')} style={styles.container} resizeMode="cover">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+          <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
           <View style={styles.formCard}>
             <Text style={styles.title}>Forgot Password?</Text>
             <Text style={styles.subtitle}>Enter your email and we'll send you a 6-digit code</Text>
@@ -358,16 +360,17 @@ export default function LoginScreen() {
             </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </ImageBackground>
     );
   }
 
   // ─── Forgot Password: Step 2 — Enter OTP Code ───
   if (currentView === 'forgotOTP') {
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
-        <Image source={require('../assets/next-chapter-logo.png')} style={styles.logoTopLeft} resizeMode="contain" />
-        <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
+      <ImageBackground source={require('../assets/background.png')} style={styles.container} resizeMode="cover">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+          <ScrollView contentContainerStyle={styles.scrollContentForm} keyboardShouldPersistTaps="handled">
           <View style={styles.formCard}>
             <Text style={styles.title}>Check Your Email</Text>
             <Text style={styles.subtitle}>
@@ -405,7 +408,8 @@ export default function LoginScreen() {
             </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </ImageBackground>
     );
   }
 
@@ -415,7 +419,8 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    width: '100%',
+    height: '100%',
   },
   logoTopLeft: {
     position: 'absolute',
@@ -427,40 +432,43 @@ const styles = StyleSheet.create({
   },
   welcomeSection: {
     position: 'absolute',
-    top: 290,
+    top: 280,
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 30,
   },
   welcomeTitle: {
     fontSize: 22,
-    color: '#666666',
+    color: '#581215',
     marginBottom: 5,
     textAlign: 'center',
+    fontFamily: 'Georgia',
   },
   appName: {
-    fontSize: 38,
+    fontSize: 48,
     fontWeight: 'bold',
-    color: '#2C2C2C',
+    color: '#581215',
     marginBottom: 8,
     textAlign: 'center',
+    fontFamily: 'Georgia',
   },
   tagline: {
     fontSize: 16,
-    color: '#666666',
+    color: '#581215',
     fontStyle: 'italic',
     textAlign: 'center',
+    fontFamily: 'Georgia',
   },
   choiceContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 30,
-    paddingTop: 290,
+    paddingTop: 150,
   },
   choiceCard: {
-    backgroundColor: 'white',
-    borderRadius: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 20,
     padding: 25,
     width: '90%',
     maxWidth: 320,
@@ -471,8 +479,8 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   primaryChoice: {
-    backgroundColor: '#4A4A4A',
-    borderRadius: 0,
+    backgroundColor: '#581215',
+    borderRadius: 15,
     padding: 20,
     alignItems: 'center',
     marginBottom: 15,
@@ -482,6 +490,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 5,
+    fontFamily: 'Georgia',
   },
   primaryChoiceSubtext: {
     color: 'white',
@@ -490,20 +499,21 @@ const styles = StyleSheet.create({
   },
   secondaryChoice: {
     backgroundColor: 'white',
-    borderRadius: 0,
+    borderRadius: 15,
     padding: 20,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#4A4A4A',
+    borderColor: '#581215',
   },
   secondaryChoiceText: {
-    color: '#4A4A4A',
+    color: '#581215',
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 5,
+    fontFamily: 'Georgia',
   },
   secondaryChoiceSubtext: {
-    color: '#4A4A4A',
+    color: '#581215',
     fontSize: 13,
     opacity: 0.7,
   },
@@ -511,12 +521,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
-    paddingTop: 230,
+    paddingTop: 120,
     paddingBottom: 100,
   },
   formCard: {
-    backgroundColor: 'white',
-    borderRadius: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 20,
     padding: 25,
     width: '90%',
     maxWidth: 320,
@@ -532,18 +542,19 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 8,
-    color: '#2C2C2C',
+    color: '#581215',
     textAlign: 'center',
+    fontFamily: 'Georgia',
   },
   subtitle: {
     fontSize: 14,
-    color: '#666666',
+    color: '#581215',
     marginBottom: 25,
     textAlign: 'center',
   },
   emailHighlight: {
     fontWeight: '600',
-    color: '#2C2C2C',
+    color: '#581215',
   },
   inputGroup: {
     marginBottom: 18,
@@ -551,14 +562,15 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     marginBottom: 6,
-    color: '#2C2C2C',
+    color: '#581215',
     fontWeight: '500',
+    fontFamily: 'Georgia',
   },
   input: {
     backgroundColor: '#F5F5F5',
     borderWidth: 1,
     borderColor: '#CCCCCC',
-    borderRadius: 0,
+    borderRadius: 10,
     padding: 12,
     fontSize: 15,
     color: '#2C2C2C',
@@ -577,12 +589,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   button: {
-    backgroundColor: '#4A4A4A',
-    borderRadius: 0,
+    backgroundColor: '#581215',
+    borderRadius: 10,
     padding: 14,
     alignItems: 'center',
     marginTop: 10,
-    shadowColor: '#4A4A4A',
+    shadowColor: '#581215',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -602,17 +614,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   forgotText: {
-    color: '#4A4A4A',
+    color: '#581215',
     fontSize: 13,
+    fontFamily: 'Georgia',
   },
   resendButton: {
     alignItems: 'center',
     marginTop: 16,
   },
   resendText: {
-    color: '#4A4A4A',
+    color: '#581215',
     fontSize: 13,
     textDecorationLine: 'underline',
+    fontFamily: 'Georgia',
   },
   error: {
     color: '#F44336',
@@ -635,9 +649,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   link: {
-    color: '#4A4A4A',
+    color: '#581215',
     fontSize: 13,
     fontWeight: '600',
+    fontFamily: 'Georgia',
   },
   passwordRow: {
     flexDirection: 'row',
@@ -659,7 +674,7 @@ const styles = StyleSheet.create({
   },
   eyeText: {
     fontSize: 13,
-    color: '#4A4A4A',
+    color: '#581215',
     fontWeight: '500',
   },
 });

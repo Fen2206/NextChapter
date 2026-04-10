@@ -128,7 +128,7 @@ export default function SurveyScreen({ navigation, route }) {
     if (isRetake) {
       navigation.goBack();
     } else {
-      navigation.replace('Home');
+      navigation.replace('Main');
     }
   };
 

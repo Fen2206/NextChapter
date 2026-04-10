@@ -209,7 +209,7 @@ export default function App() {
           component={SurveyScreen}
           options={{ headerShown: false }}
         />
-        <Stack.Screen name="Home" component={DrawerNavigator} />
+        <Stack.Screen name="Main" component={DrawerNavigator} />
         <Stack.Screen
           name="EditProfile"
           component={EditProfileScreen}

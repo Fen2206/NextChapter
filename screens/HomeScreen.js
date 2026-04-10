@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ImageBackground, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
@@ -21,44 +21,19 @@ const GENRE_LABEL_MAP = {
   poetry: 'Poetry',
 };
 
-// Sample book data — will be replaced with Google Books API later
 const SAMPLE_BOOKS = [
-  {
-    id: 1,
-    title: 'IT',
-    author: 'Stephen King',
-    rating: 4.24,
-    cover: 'https://covers.openlibrary.org/b/isbn/9780451149510-L.jpg',
-    currentPage: 721,
-    totalPages: 1184,
-    description: 'Welcome to Derry, Maine...',
-    genres: ['Horror', 'Fiction', 'Thriller'],
-    isbn: '9780451149510',
-  },
-  {
-    id: 2,
-    title: 'The Hunger Games',
-    author: 'Suzanne Collins',
-    rating: 4.32,
-    cover: 'https://covers.openlibrary.org/b/isbn/9780439023481-L.jpg',
-    currentPage: 0,
-    totalPages: 374,
-    description: 'In the ruins of a place once known as North America...',
-    genres: ['Young Adult', 'Dystopian', 'Science Fiction'],
-    isbn: '9780439023481',
-  },
-  {
-    id: 3,
-    title: 'The Great Gatsby',
-    author: 'F. Scott Fitzgerald',
-    rating: 3.93,
-    cover: 'https://covers.openlibrary.org/b/isbn/9780140007466-L.jpg',
-    currentPage: 0,
-    totalPages: 180,
-    description: 'The Great Gatsby, F. Scott Fitzgerald\'s third book...',
-    genres: ['Classic', 'Fiction', 'Romance'],
-    isbn: '9780140007466',
-  },
+  { id: 1, title: 'IT', author: 'Stephen King', rating: 4.24, cover: 'https://covers.openlibrary.org/b/isbn/9780451149510-L.jpg', currentPage: 721, totalPages: 1184, genres: ['Horror', 'Fiction', 'Thriller'], isbn: '9780451149510' },
+  { id: 2, title: 'The Hunger Games', author: 'Suzanne Collins', rating: 4.32, cover: 'https://covers.openlibrary.org/b/isbn/9780439023481-L.jpg', currentPage: 0, totalPages: 374, genres: ['Young Adult', 'Dystopian', 'Science Fiction'], isbn: '9780439023481' },
+  { id: 3, title: 'The Great Gatsby', author: 'F. Scott Fitzgerald', rating: 3.93, cover: 'https://covers.openlibrary.org/b/isbn/9780140007466-L.jpg', currentPage: 0, totalPages: 180, genres: ['Classic', 'Fiction', 'Romance'], isbn: '9780140007466' },
+  { id: 4, title: 'Pride and Prejudice', author: 'Jane Austen', rating: 4.28, cover: 'https://covers.openlibrary.org/b/isbn/9780141439518-L.jpg', currentPage: 0, totalPages: 432, genres: ['Classic', 'Romance'], isbn: '9780141439518' },
+  { id: 5, title: '1984', author: 'George Orwell', rating: 4.18, cover: 'https://covers.openlibrary.org/b/isbn/9780451524935-L.jpg', currentPage: 0, totalPages: 328, genres: ['Dystopian', 'Classic'], isbn: '9780451524935' },
+  { id: 6, title: 'The Hobbit', author: 'J.R.R. Tolkien', rating: 4.27, cover: 'https://covers.openlibrary.org/b/isbn/9780547928227-L.jpg', currentPage: 0, totalPages: 300, genres: ['Fantasy', 'Adventure'], isbn: '9780547928227' },
+  { id: 7, title: 'The Night Circus', author: 'Erin Morgenstern', rating: 4.04, cover: 'https://covers.openlibrary.org/b/isbn/9780307744432-L.jpg', currentPage: 0, totalPages: 387, genres: ['Fantasy', 'Romance'], isbn: '9780307744432' },
+  { id: 8, title: 'Dune', author: 'Frank Herbert', rating: 4.26, cover: 'https://covers.openlibrary.org/b/isbn/9780441172719-L.jpg', currentPage: 0, totalPages: 688, genres: ['Science Fiction'], isbn: '9780441172719' },
+  { id: 9, title: 'Rebecca', author: 'Daphne du Maurier', rating: 4.24, cover: 'https://covers.openlibrary.org/b/isbn/9780380730407-L.jpg', currentPage: 0, totalPages: 449, genres: ['Mystery', 'Classic'], isbn: '9780380730407' },
+  { id: 10, title: 'Circe', author: 'Madeline Miller', rating: 4.23, cover: 'https://covers.openlibrary.org/b/isbn/9780316556347-L.jpg', currentPage: 0, totalPages: 393, genres: ['Fantasy', 'Mythology'], isbn: '9780316556347' },
+  { id: 11, title: 'Normal People', author: 'Sally Rooney', rating: 3.82, cover: 'https://covers.openlibrary.org/b/isbn/9781984822178-L.jpg', currentPage: 0, totalPages: 266, genres: ['Fiction', 'Romance'], isbn: '9781984822178' },
+  { id: 12, title: 'Home Body', author: 'Rupi Kaur', rating: 4.10, cover: 'https://covers.openlibrary.org/b/isbn/9781449486808-L.jpg', currentPage: 0, totalPages: 192, genres: ['Poetry'], isbn: '9781449486808' },
 ];
 
 export default function HomeScreen({ navigation }) {
@@ -75,13 +50,26 @@ export default function HomeScreen({ navigation }) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
+        const fallbackUsername =
+          user.user_metadata?.username ||
+          (user.email ? user.email.split('@')[0] : null) ||
+          'Reader';
+
         // fetch profile + preferences
-        const { data: profileData } = await supabase
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('username, display_name, preferences')
           .eq('id', user.id)
           .single();
-        setProfile(profileData);
+
+        if (profileError || !profileData) {
+          setProfile({ username: fallbackUsername, display_name: '' });
+        } else {
+          setProfile({
+            username: profileData.username || fallbackUsername,
+            display_name: profileData.display_name || '',
+          });
+        }
 
         // load recommended books from survey preferences
         const savedBooks = profileData?.preferences?.recommendedBooks || [];
@@ -126,7 +114,6 @@ export default function HomeScreen({ navigation }) {
       const userGenres = preferences?.genres || [];
       const genreLabels = userGenres.map((id) => GENRE_LABEL_MAP[id]).filter(Boolean);
 
-      // fetch all public clubs
       const { data: clubs } = await supabase
         .from('clubs')
         .select('id, name, description, genres, is_public')
@@ -137,7 +124,6 @@ export default function HomeScreen({ navigation }) {
       const filtered = clubs.filter((c) => !alreadyJoined.includes(c.id));
 
       if (genreLabels.length > 0) {
-        // score by genre overlap
         const scored = filtered
           .map((c) => {
             const clubGenres = c.genres || [];
@@ -150,10 +136,8 @@ export default function HomeScreen({ navigation }) {
           .sort((a, b) => b.score - a.score)
           .slice(0, 5);
 
-        // fall back to first 5 public clubs if no genre matches
         setRecommendedClubs(scored.length > 0 ? scored : filtered.slice(0, 5));
       } else {
-        // no survey taken yet — show first 5 public clubs
         setRecommendedClubs(filtered.slice(0, 5));
       }
     } catch (err) {
@@ -183,156 +167,160 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleBeginReading = (book) => {
-    console.log('Begin reading:', book.title);
-    alert(`Starting to read: ${book.title}\n(Reading view coming soon!)`);
+    navigation.navigate('BookDetails', { book });
   };
 
-  const handleClubPress = (club) => {
+  const handleClubPress = () => {
     navigation.navigate('Community');
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
+    <ImageBackground source={require('../assets/background2.png')} style={styles.container} resizeMode="cover">
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.content}>
 
-        {/* Welcome Section */}
-        <Text style={styles.title}>
-          Welcome, {profile?.display_name || profile?.username || 'Reader'}
-        </Text>
-        <Text style={styles.subtitle}>Discover your next great read</Text>
+          {/* Welcome Section */}
+          <View style={styles.welcomeRow}>
+            <View style={styles.welcomeIconCircle}>
+              <Ionicons name="person" size={20} color={colors.buttonText} />
+            </View>
+            <View style={styles.welcomeTextWrap}>
+              <Text style={styles.title}>
+                Welcome, {profile?.display_name || profile?.username || 'Reader'}
+              </Text>
+              <Text style={styles.subtitle}>Discover your next great read</Text>
+            </View>
+          </View>
 
-        {/* Continue Reading Section */}
-        {currentlyReading.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Continue Reading</Text>
-            {currentlyReading.map((userBook) => {
-              const book = userBook.books;
-              const progress = book?.page_count
-                ? Math.round((userBook.current_page / book.page_count) * 100)
-                : 0;
-              const authors = Array.isArray(book?.authors)
-                ? book.authors.join(', ')
-                : book?.authors || '';
-              return (
-                <TouchableOpacity
-                  key={userBook.id}
-                  style={styles.currentlyReadingCard}
-                  onPress={() => handleBookPress(book)}
-                  activeOpacity={0.7}
-                >
-                  <Image
-                    source={{ uri: book?.cover_url }}
-                    style={styles.currentlyReadingCover}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.currentlyReadingInfo}>
-                    <Text style={styles.bookTitle} numberOfLines={2}>{book?.title}</Text>
-                    <Text style={styles.bookAuthor}>{authors}</Text>
-                    <View style={styles.progressContainer}>
-                      <View style={styles.progressBar}>
-                        <View style={[styles.progressFill, { width: `${progress}%` }]} />
+          {/* Continue Reading Section */}
+          {currentlyReading.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Continue Reading</Text>
+              {currentlyReading.map((userBook) => {
+                const book = userBook.books;
+                const progress = book?.page_count
+                  ? Math.round((userBook.current_page / book.page_count) * 100)
+                  : 0;
+                const authors = Array.isArray(book?.authors)
+                  ? book.authors.join(', ')
+                  : book?.authors || '';
+                return (
+                  <TouchableOpacity
+                    key={userBook.id}
+                    style={styles.currentlyReadingCard}
+                    onPress={() => handleBookPress(book)}
+                    activeOpacity={0.7}
+                  >
+                    <Image source={{ uri: book?.cover_url }} style={styles.currentlyReadingCover} resizeMode="cover" />
+                    <View style={styles.currentlyReadingInfo}>
+                      <Text style={styles.bookTitle} numberOfLines={2}>{book?.title}</Text>
+                      <Text style={styles.bookAuthor}>{authors}</Text>
+                      <View style={styles.progressContainer}>
+                        <View style={styles.progressBar}>
+                          <View style={[styles.progressFill, { width: `${progress}%` }]} />
+                        </View>
+                        <Text style={styles.progressText}>{progress}%</Text>
                       </View>
-                      <Text style={styles.progressText}>{progress}%</Text>
+                      <Text style={styles.pageCount}>Page {userBook.current_page} of {book?.page_count}</Text>
+                      <TouchableOpacity style={styles.continueButton} onPress={() => handleBeginReading(book)}>
+                        <Text style={styles.continueButtonText}>Continue Reading</Text>
+                        <Ionicons name="arrow-forward" size={16} color={colors.buttonText} />
+                      </TouchableOpacity>
                     </View>
-                    <Text style={styles.pageCount}>
-                      Page {userBook.current_page} of {book?.page_count}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.continueButton}
-                      onPress={() => handleBeginReading(book)}
-                    >
-                      <Text style={styles.continueButtonText}>Continue Reading</Text>
-                      <Ionicons name="arrow-forward" size={16} color={colors.buttonText} />
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
 
-        {/* Recommended for You — Books */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recommended for You</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
-            {(recommendedBooks.length > 0 ? recommendedBooks : SAMPLE_BOOKS).map((book) => (
-              <BookCard
-                key={book.id}
-                book={book}
-                onPress={() => handleBookPress(book)}
-                onBeginReading={() => handleBeginReading(book)}
-              />
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Recommended Clubs for You */}
-        {recommendedClubs.length > 0 && (
+          {/* Recommended for You — Books */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Recommended Clubs</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Community')}>
+              <Text style={styles.sectionTitle}>Recommended for You</Text>
+              <TouchableOpacity>
                 <Text style={styles.seeAllText}>See All</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
-              {recommendedClubs.map((club) => {
-                const joined = joinedClubIds.includes(club.id);
-                const joining = joiningClubId === club.id;
-                return (
-                  <ClubCard
-                    key={club.id}
-                    club={club}
-                    joined={joined}
-                    joining={joining}
-                    onPress={() => handleClubPress(club)}
-                    onJoin={() => handleJoinClub(club.id)}
+            <View style={styles.sectionCard}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+                {(recommendedBooks.length > 0 ? recommendedBooks : SAMPLE_BOOKS).map((book) => (
+                  <BookCard
+                    key={book.id}
+                    book={book}
+                    onPress={() => handleBookPress(book)}
+                    onBeginReading={() => handleBeginReading(book)}
                   />
-                );
-              })}
-            </ScrollView>
+                ))}
+              </ScrollView>
+            </View>
           </View>
-        )}
 
-        {/* Popular This Week */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Popular This Week</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
+          {/* Recommended Clubs for You */}
+          {recommendedClubs.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Recommended Clubs</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('Community')}>
+                  <Text style={styles.seeAllText}>See All</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+                {recommendedClubs.map((club) => {
+                  const joined = joinedClubIds.includes(club.id);
+                  const joining = joiningClubId === club.id;
+                  return (
+                    <ClubCard
+                      key={club.id}
+                      club={club}
+                      joined={joined}
+                      joining={joining}
+                      onPress={handleClubPress}
+                      onJoin={() => handleJoinClub(club.id)}
+                    />
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Popular This Week */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Popular This Week</Text>
+              <TouchableOpacity>
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.sectionCard}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+                {SAMPLE_BOOKS.slice().reverse().map((book) => (
+                  <BookCard
+                    key={book.id}
+                    book={book}
+                    onPress={() => handleBookPress(book)}
+                    onBeginReading={() => handleBeginReading(book)}
+                  />
+                ))}
+              </ScrollView>
+            </View>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
-            {SAMPLE_BOOKS.slice().reverse().map((book) => (
-              <BookCard
-                key={book.id}
-                book={book}
-                onPress={() => handleBookPress(book)}
-                onBeginReading={() => handleBeginReading(book)}
-              />
-            ))}
-          </ScrollView>
+
         </View>
-
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </ImageBackground>
   );
 }
 
-// Book Card — unchanged from original
 function BookCard({ book, onPress, onBeginReading }) {
   return (
     <TouchableOpacity style={styles.bookCard} onPress={onPress} activeOpacity={0.8}>
-      <Image
-        source={{ uri: book.cover || book.cover_url || 'https://via.placeholder.com/140x210?text=No+Cover' }}
-        style={styles.bookCover}
-        resizeMode="cover"
-      />
+      <View style={styles.bookCoverShadow}>
+        <Image
+          source={{ uri: book.cover || book.cover_url || 'https://via.placeholder.com/140x210?text=No+Cover' }}
+          style={styles.bookCover}
+          resizeMode="cover"
+        />
+      </View>
       <Text style={styles.cardTitle} numberOfLines={2}>{book.title}</Text>
       <Text style={styles.cardAuthor} numberOfLines={1}>
         {Array.isArray(book.author) ? book.author[0] : book.author || ''}
@@ -353,22 +341,16 @@ function BookCard({ book, onPress, onBeginReading }) {
   );
 }
 
-// Club Card for horizontal row
 function ClubCard({ club, joined, joining, onPress, onJoin }) {
   return (
     <TouchableOpacity style={styles.clubCard} onPress={onPress} activeOpacity={0.8}>
-      {/* Club icon */}
       <View style={styles.clubIconContainer}>
         <Ionicons name="people" size={28} color={colors.buttonPrimary} />
       </View>
-
       <Text style={styles.clubCardName} numberOfLines={2}>{club.name}</Text>
-
       {club.description ? (
         <Text style={styles.clubCardDesc} numberOfLines={2}>{club.description}</Text>
       ) : null}
-
-      {/* Genre tags */}
       {club.genres?.length > 0 && (
         <View style={styles.clubGenreRow}>
           {club.genres.slice(0, 2).map((g) => (
@@ -378,17 +360,14 @@ function ClubCard({ club, joined, joining, onPress, onJoin }) {
           ))}
         </View>
       )}
-
       <TouchableOpacity
         style={[styles.clubJoinButton, joined && styles.clubJoinButtonDone]}
         onPress={(e) => { e.stopPropagation(); !joined && onJoin(); }}
         disabled={joined || joining}
       >
-        {joining ? (
-          <Text style={styles.clubJoinButtonText}>Joining...</Text>
-        ) : (
-          <Text style={styles.clubJoinButtonText}>{joined ? '✓ Joined' : 'Join Club'}</Text>
-        )}
+        <Text style={styles.clubJoinButtonText}>
+          {joining ? 'Joining...' : joined ? '✓ Joined' : 'Join Club'}
+        </Text>
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -397,26 +376,62 @@ function ClubCard({ club, joined, joining, onPress, onJoin }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    width: '100%',
+    height: '100%',
+  },
+  scrollView: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   content: {
-    paddingVertical: spacing.lg,
+    paddingTop: 72,
+    paddingBottom: spacing.lg,
+  },
+  welcomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+  welcomeIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.buttonPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  welcomeTextWrap: {
+    flex: 1,
   },
   title: {
-    fontSize: typography.fontSizes.xxxl,
+    fontSize: 28,
     fontWeight: typography.fontWeights.bold,
-    color: colors.primary,
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    color: '#1F1F1F',
+    marginBottom: 2,
+    fontFamily: 'Georgia',
   },
   subtitle: {
     fontSize: typography.fontSizes.base,
-    color: colors.secondary,
-    marginBottom: spacing.xl,
-    paddingHorizontal: spacing.lg,
+    color: '#666666',
+    opacity: 0.8,
   },
   section: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
+  },
+  sectionCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    borderRadius: 16,
+    marginHorizontal: spacing.xs,
+    marginBottom: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 4,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -428,18 +443,20 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: typography.fontSizes.xl,
     fontWeight: typography.fontWeights.semibold,
-    color: colors.primary,
+    color: '#1F1F1F',
+    fontFamily: 'Georgia',
   },
   seeAllText: {
     fontSize: typography.fontSizes.sm,
-    color: colors.secondary,
+    color: '#666666',
     fontWeight: typography.fontWeights.medium,
+    fontFamily: 'Georgia',
   },
 
   // Currently Reading Card
   currentlyReadingCard: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
     borderRadius: 12,
     padding: spacing.md,
     marginHorizontal: spacing.lg,
@@ -449,6 +466,11 @@ const styles = StyleSheet.create({
     width: 80,
     height: 120,
     borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 9,
+    elevation: 8,
   },
   currentlyReadingInfo: {
     flex: 1,
@@ -458,11 +480,11 @@ const styles = StyleSheet.create({
   bookTitle: {
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.semibold,
-    color: colors.primary,
+    color: '#1F1F1F',
   },
   bookAuthor: {
     fontSize: typography.fontSizes.sm,
-    color: colors.secondary,
+    color: '#666666',
     marginTop: 2,
   },
   progressContainer: {
@@ -485,23 +507,24 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
+    color: '#666666',
     width: 35,
   },
   pageCount: {
     fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
+    color: '#666666',
     marginTop: 2,
   },
   continueButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.buttonPrimary,
+    backgroundColor: '#581215',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    borderRadius: 8,
+    borderRadius: 12,
     marginTop: spacing.sm,
+    alignSelf: 'center',
   },
   continueButtonText: {
     color: colors.buttonText,
@@ -510,33 +533,43 @@ const styles = StyleSheet.create({
     marginRight: spacing.xs,
   },
 
-  // Horizontal scroll rows
+  // Book Card Styles
   horizontalScroll: {
     paddingLeft: spacing.lg,
+    paddingBottom: spacing.xs,
   },
-
-  // Book Card
   bookCard: {
-    width: 140,
-    marginRight: spacing.md,
-    backgroundColor: colors.background,
+    width: 138,
+    marginRight: spacing.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    overflow: 'visible',
+  },
+  bookCoverShadow: {
+    borderRadius: 8,
+    marginBottom: spacing.xs,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 9,
+    elevation: 7,
+    ...(Platform.OS === 'web' ? { boxShadow: '0px 7px 16px rgba(0, 0, 0, 0.22)' } : {}),
   },
   bookCover: {
-    width: 140,
-    height: 210,
+    width: 138,
+    height: 207,
     borderRadius: 8,
     backgroundColor: colors.surface,
   },
   cardTitle: {
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
-    color: colors.primary,
+    color: '#1F1F1F',
     marginTop: spacing.sm,
     height: 36,
   },
   cardAuthor: {
     fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
+    color: '#666666',
     marginTop: 2,
   },
   ratingContainer: {
@@ -546,16 +579,18 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
+    color: '#666666',
     marginLeft: 4,
   },
   beginButton: {
-    backgroundColor: colors.buttonPrimary,
+    backgroundColor: '#581215',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    borderRadius: 8,
+    borderRadius: 12,
     marginTop: spacing.sm,
     alignItems: 'center',
+    width: 140,
+    alignSelf: 'center',
   },
   beginButtonText: {
     color: colors.buttonText,
