@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   Modal,
   Pressable,
+  TextInput,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { WebView } from "react-native-webview";
@@ -38,7 +39,8 @@ const COLOR_OPTIONS = [
   { name: "Pink", color: "#F48FB1" },
   { name: "Purple", color: "#CE93D8" },
 ];
-// Save user Progress 
+
+// Save user progress key
 function makeProgressKey({ book, url, chapter, userId }) {
   const stable = book?.externalId ?? book?.id ?? url ?? "unknown";
   const uidPart = userId ? `u:${userId}` : "u:anon";
@@ -46,8 +48,8 @@ function makeProgressKey({ book, url, chapter, userId }) {
 }
 
 export default function ReaderScreen({ route, navigation }) {
-  const { book: b, url } = route.params ?? {};
-  const chapter = 1; 
+  const { book: b, url: paramUrl, bookId: paramBookId, resumePage } = route.params ?? {};
+  const chapter = 1;
 
   const webRef = useRef(null);
 
@@ -58,13 +60,20 @@ export default function ReaderScreen({ route, navigation }) {
   const [webReady, setWebReady] = useState(false);
 
   const [userId, setUserId] = useState(null);
-
   const [internalBookId, setInternalBookId] = useState(null);
 
   const [highlights, setHighlights] = useState([]);
 
+  // Notes (annotations)
+  const [notes, setNotes] = useState([]);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+
+  // Add-note flow
   const [pendingSelection, setPendingSelection] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [noteEditorVisible, setNoteEditorVisible] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [isSavingNote, setIsSavingNote] = useState(false);
 
   const [pickerPos] = useState({ x: 20, y: 300 });
 
@@ -72,6 +81,9 @@ export default function ReaderScreen({ route, navigation }) {
   const [restorePage, setRestorePage] = useState(null);
   const didRestoreRef = useRef(false);
   const saveTimerRef = useRef(null);
+
+  // IMPORTANT: use state for the actual content URL so setUrl works
+  const [contentUrl, setContentUrl] = useState(paramUrl ?? null);
 
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -117,30 +129,6 @@ export default function ReaderScreen({ route, navigation }) {
     };
   }, []);
 
-  // Fetch book text
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        if (!url) throw new Error("No URL provided");
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to fetch book");
-        const txt = await res.text();
-        if (!mounted) return;
-
-        // normalize newlines so offsets match
-        setRawText(String(txt).replace(/\r\n/g, "\n"));
-      } catch (e) {
-        Alert.alert("Load failed", e?.message ?? "Could not load book");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [url]);
-
   // Ensure the book exists in `books` table and capture its internal id
   useEffect(() => {
     let mounted = true;
@@ -178,6 +166,74 @@ export default function ReaderScreen({ route, navigation }) {
     };
   }, [b]);
 
+  // If no URL was passed, try to load it from books table using paramBookId
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        if (contentUrl) return;
+        if (!paramBookId) return;
+
+        const { data: bookRow, error } = await supabase
+          .from("books")
+          .select("*")
+          .eq("id", paramBookId)
+          .single();
+
+        if (!mounted) return;
+
+        if (error) {
+          console.warn("couldn't load book row", error);
+          return;
+        }
+
+        if (bookRow) {
+          const candidate =
+            bookRow.text_url ??
+            bookRow.reader_url ??
+            bookRow.content_url ??
+            bookRow.url ??
+            null;
+
+          if (candidate) setContentUrl(candidate);
+        }
+      } catch (e) {
+        console.warn("fetchBookIfNeeded error", e);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [paramBookId, contentUrl]);
+
+  // Fetch book text
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        if (!contentUrl) throw new Error("No URL provided");
+        const res = await fetch(contentUrl);
+        if (!res.ok) throw new Error("Failed to fetch book");
+        const txt = await res.text();
+        if (!mounted) return;
+
+        // normalize newlines so offsets match
+        setRawText(String(txt).replace(/\r\n/g, "\n"));
+      } catch (e) {
+        Alert.alert("Load failed", e?.message ?? "Could not load book");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [contentUrl]);
+
   // Load highlights for this user + book + chapter
   useEffect(() => {
     if (!userId || !internalBookId) return;
@@ -187,7 +243,7 @@ export default function ReaderScreen({ route, navigation }) {
       try {
         const { data, error } = await supabase
           .from("highlights")
-          .select("id, start_offset, end_offset, text_snippet, color, created_at")
+          .select("id, start_offset, end_offset, text_snippet, color, page, created_at")
           .eq("user_id", userId)
           .eq("book_id", internalBookId)
           .eq("chapter", chapter)
@@ -212,13 +268,17 @@ export default function ReaderScreen({ route, navigation }) {
     let mounted = true;
     (async () => {
       try {
-        const key = makeProgressKey({ book: b, url, chapter, userId });
+        const key = makeProgressKey({ book: b, url: contentUrl, chapter, userId });
         const v = await AsyncStorage.getItem(key);
         if (!mounted) return;
 
         const p = v ? parseInt(v, 10) : null;
-        setRestorePage(Number.isFinite(p) && p > 0 ? p : 1);
-        didRestoreRef.current = false; // allow restore on next webReady
+
+        // If resumePage passed, prefer it
+        const preferred = Number.isFinite(resumePage) && resumePage > 0 ? resumePage : p;
+
+        setRestorePage(Number.isFinite(preferred) && preferred > 0 ? preferred : 1);
+        didRestoreRef.current = false;
       } catch {
         if (mounted) {
           setRestorePage(1);
@@ -230,9 +290,28 @@ export default function ReaderScreen({ route, navigation }) {
     return () => {
       mounted = false;
     };
-  }, [b, url, chapter, userId]);
+  }, [b, contentUrl, chapter, userId, resumePage]);
 
-  // Build WebView HTML 
+  // Save "last opened url"
+  useEffect(() => {
+    if (!userId || !internalBookId || !contentUrl) return;
+
+    const key = `reader:lastOpen:${userId}:book:${internalBookId}`;
+    const payload = {
+      url: contentUrl,
+      book: {
+        source: b?.source ?? "gutenberg",
+        externalId: b?.externalId ?? b?.id ?? null,
+        title: b?.title ?? null,
+        author: b?.author ?? null,
+        cover: b?.cover ?? null,
+      },
+    };
+
+    AsyncStorage.setItem(key, JSON.stringify(payload)).catch(() => {});
+  }, [userId, internalBookId, contentUrl, b]);
+
+  // Build WebView HTML
   const html = useMemo(() => {
     return `<!doctype html>
 <html>
@@ -310,10 +389,8 @@ html,body{
       .replace(/'/g,"&#039;");
   }
 
-  // split into paragraphs
   const parts = raw.split(/\\n\\s*\\n+/g);
 
-  // find real paragraph offsets by searching forward through raw
   let cursor = 0;
   const paras = parts.map((p) => {
     const found = raw.indexOf(p, cursor);
@@ -356,7 +433,6 @@ html,body{
     setTimeout(() => { viewport.scrollLeft = target; sendPageInfo(); }, 60);
   }
 
-  // Apply highlight within a single paragraph by offsets
   function applyHighlightToParagraph(start_offset, end_offset, color){
     const ps = Array.from(document.querySelectorAll(".p"));
     let target = null;
@@ -367,7 +443,6 @@ html,body{
       const pLen = (p.innerText || "").length;
       const pEnd = pStart + pLen;
 
-      // only supports highlights fully inside one paragraph (matches your selection code)
       if (start_offset >= pStart && end_offset <= pEnd){
         target = { el: p, pStart };
         break;
@@ -421,7 +496,6 @@ html,body{
     }
   }
 
-  // selection -> offsets (single paragraph only)
   function selectionToOffsets(){
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
@@ -506,7 +580,6 @@ html,body{
     setTimeout(()=>go(p), 120);
   });
 
-
   setTimeout(()=>{ window.__NC.ready(); }, 250);
 })();
 </script>
@@ -514,41 +587,60 @@ html,body{
 </html>`;
   }, [rawText, dark]);
 
-  // After web is ready, restore page  and apply highlights
+  // After web is ready, restore page and apply highlights
   useEffect(() => {
     if (!webReady) return;
 
-  
     if (!didRestoreRef.current && Number.isFinite(restorePage) && restorePage > 0) {
       didRestoreRef.current = true;
       inject(`(function(){ window.__NC && window.__NC.go && window.__NC.go(${restorePage}); })();`);
     }
 
-    // Apply highlights 
     if (highlights?.length) {
       const list = highlights.map((h) => ({
         start_offset: h.start_offset,
         end_offset: h.end_offset,
         color: h.color,
       }));
-      inject(`(function(){ window.__NC && window.__NC.applyHighlights && window.__NC.applyHighlights(${JSON.stringify(list)}); })();`);
+      inject(
+        `(function(){ window.__NC && window.__NC.applyHighlights && window.__NC.applyHighlights(${JSON.stringify(
+          list
+        )}); })();`
+      );
     }
   }, [webReady, restorePage, highlights]);
 
-  // Save page progress 
+  // Save page progress
   const saveProgressThrottled = async (page) => {
     try {
-      const key = makeProgressKey({ book: b, url, chapter, userId });
+      const key = makeProgressKey({ book: b, url: contentUrl, chapter, userId });
 
-      // throttle writes
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(async () => {
         try {
           await AsyncStorage.setItem(key, String(page));
         } catch {}
+
+        try {
+          if (userId && internalBookId) {
+            await supabase.from("user_books").upsert(
+              {
+                user_id: userId,
+                book_id: internalBookId,
+                status: "reading",
+                current_page: page,
+              },
+              { onConflict: "user_id,book_id" }
+            );
+          }
+        } catch (e) {
+          console.log("user_books progress upsert failed:", e?.message ?? e);
+        }
       }, 300);
     } catch {}
   };
+
+  // ===== Highlights + Notes helpers =====
 
   const saveHighlight = async (colorHex) => {
     try {
@@ -574,20 +666,14 @@ html,body{
         end_offset: pendingSelection.end_offset,
         text_snippet: pendingSelection.text_snippet,
         color: colorHex,
+        page: pageInfo.page, // ✅ Option A
       };
 
-      const { data, error } = await supabase
-        .from("highlights")
-        .insert(payload)
-        .select()
-        .single();
-
+      const { data, error } = await supabase.from("highlights").insert(payload).select().single();
       if (error) throw error;
 
-      // update state
       setHighlights((prev) => [...prev, data]);
 
-      // inject highlight immediately
       inject(`(function(){
         window.__NC && window.__NC.applyHighlightToParagraph &&
         window.__NC.applyHighlightToParagraph(${data.start_offset}, ${data.end_offset}, "${data.color}");
@@ -599,9 +685,175 @@ html,body{
     }
   };
 
+  async function getOrCreateHighlight({
+    userId,
+    bookId,
+    chapter,
+    startOffset,
+    endOffset,
+    snippet,
+    page,
+  }) {
+    const { data: existing, error: findErr } = await supabase
+      .from("highlights")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("book_id", bookId)
+      .eq("chapter", chapter)
+      .eq("start_offset", startOffset)
+      .eq("end_offset", endOffset)
+      .maybeSingle();
+
+    if (findErr) throw findErr;
+    if (existing?.id) return existing.id;
+
+    const { data: created, error: insErr } = await supabase
+      .from("highlights")
+      .insert({
+        user_id: userId,
+        book_id: bookId,
+        chapter,
+        start_offset: startOffset,
+        end_offset: endOffset,
+        text_snippet: snippet,
+        page,
+        color: "#FFF59D", // optional default, can be changed later
+      })
+      .select("id")
+      .single();
+
+    if (insErr) throw insErr;
+    return created.id;
+  }
+
+  async function createAnnotation({ userId, highlightId, body }) {
+    const { data, error } = await supabase
+      .from("annotations")
+      .insert({
+        user_id: userId,
+        highlight_id: highlightId,
+        body,
+        is_shared: false,
+      })
+      .select("id, highlight_id, body, created_at, is_shared")
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async function loadNotesForPage({ userId, bookId, chapter, page }) {
+    const { data: hl, error: hlErr } = await supabase
+      .from("highlights")
+      .select("id, start_offset, end_offset, text_snippet, page, color")
+      .eq("user_id", userId)
+      .eq("book_id", bookId)
+      .eq("chapter", chapter)
+      .eq("page", page);
+
+    if (hlErr) throw hlErr;
+
+    const highlightIds = (hl ?? []).map((h) => h.id);
+    if (highlightIds.length === 0) return [];
+
+    const { data: ann, error: annErr } = await supabase
+      .from("annotations")
+      .select("id, highlight_id, body, created_at, is_shared")
+      .eq("user_id", userId)
+      .in("highlight_id", highlightIds)
+      .order("created_at", { ascending: true });
+
+    if (annErr) throw annErr;
+
+    const hlMap = new Map(hl.map((h) => [h.id, h]));
+    return ann.map((a) => ({ ...a, highlight: hlMap.get(a.highlight_id) }));
+  }
+
+  // refresh notes when page changes
+  useEffect(() => {
+    if (!userId || !internalBookId) return;
+
+    loadNotesForPage({
+      userId,
+      bookId: internalBookId,
+      chapter,
+      page: pageInfo.page,
+    })
+      .then(setNotes)
+      .catch((e) => console.log("loadNotesForPage error:", e?.message ?? e));
+  }, [userId, internalBookId, chapter, pageInfo.page]);
+
   const handleAddNote = () => {
-    Alert.alert("Add Note", "Hook your notes feature here.");
-    cancelPicker();
+    if (!pendingSelection) return;
+
+    // open editor
+    setNoteText("");
+    setNoteEditorVisible(true);
+  };
+
+  const saveNote = async () => {
+    try {
+      if (!pendingSelection) return;
+
+      if (!userId) {
+        Alert.alert("Not signed in", "Please sign in to save notes.");
+        setNoteEditorVisible(false);
+        cancelPicker();
+        return;
+      }
+
+      if (!internalBookId) {
+        Alert.alert("Book not ready", "Could not resolve internal book id yet.");
+        setNoteEditorVisible(false);
+        cancelPicker();
+        return;
+      }
+
+      if (!noteText.trim()) {
+        Alert.alert("Empty note", "Write something before saving.");
+        return;
+      }
+
+      setIsSavingNote(true);
+
+      const highlightId = await getOrCreateHighlight({
+        userId,
+        bookId: internalBookId,
+        chapter,
+        startOffset: pendingSelection.start_offset,
+        endOffset: pendingSelection.end_offset,
+        snippet: pendingSelection.text_snippet,
+        page: pageInfo.page,
+      });
+
+      await createAnnotation({
+        userId,
+        highlightId,
+        body: noteText.trim(),
+      });
+
+      // refresh notes for this page
+      const refreshed = await loadNotesForPage({
+        userId,
+        bookId: internalBookId,
+        chapter,
+        page: pageInfo.page,
+      });
+      setNotes(refreshed);
+
+      // ensure highlight visible in UI (subtle highlight)
+      inject(`(function(){
+        window.__NC && window.__NC.applyHighlightToParagraph &&
+        window.__NC.applyHighlightToParagraph(${pendingSelection.start_offset}, ${pendingSelection.end_offset}, "#FFF59D");
+      })();`);
+
+      setNoteEditorVisible(false);
+      cancelPicker();
+    } catch (e) {
+      Alert.alert("Save note failed", e?.message ?? "Could not save note");
+    } finally {
+      setIsSavingNote(false);
+    }
   };
 
   if (loading) {
@@ -612,6 +864,8 @@ html,body{
       </View>
     );
   }
+
+  const notesCountThisPage = notes?.length ?? 0;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: dark ? "#0B0F17" : colors.background }]}>
@@ -631,18 +885,18 @@ html,body{
         </View>
 
         <View style={styles.headerRight}>
-          <TouchableOpacity onPress={() => {}} style={styles.headerButton}>
+          {/* Notes button */}
+          <TouchableOpacity onPress={() => setShowNotesModal(true)} style={styles.headerButton}>
             <Ionicons name="bookmark" size={24} color={colors.primary} />
-            {highlights.length > 0 && (
+            {notesCountThisPage > 0 && (
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>{highlights.length}</Text>
+                <Text style={styles.badgeText}>{notesCountThisPage}</Text>
               </View>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => {
-              
               didRestoreRef.current = false;
               setWebReady(false);
               setDark((d) => !d);
@@ -666,9 +920,7 @@ html,body{
               setPageInfo({ page: msg.page, total: msg.total });
               setWebReady(true);
 
-              // save progress
               if (Number.isFinite(msg.page)) saveProgressThrottled(msg.page);
-
               return;
             }
 
@@ -719,6 +971,91 @@ html,body{
         </TouchableOpacity>
       </View>
 
+      {/* Notes list modal */}
+      <Modal visible={showNotesModal} transparent animationType="slide" onRequestClose={() => setShowNotesModal(false)}>
+        <Pressable style={styles.overlay} onPress={() => setShowNotesModal(false)}>
+          <Pressable style={[styles.pickerCard, { top: 90, left: 20, right: 20, width: undefined }]} onPress={() => {}}>
+            <Text style={{ fontWeight: "700", marginBottom: 8 }}>
+              Notes — Page {pageInfo.page}
+            </Text>
+
+            <View style={{ maxHeight: 320 }}>
+              {notesCountThisPage === 0 ? (
+                <Text style={{ color: colors.secondary }}>No notes on this page.</Text>
+              ) : (
+                notes.map((n) => (
+                  <Pressable
+                    key={String(n.id)}
+                    onPress={() => {
+                      setShowNotesModal(false);
+                      // jump to this page (we’re already filtered by this page, but safe)
+                      inject(`(function(){ window.__NC && window.__NC.go && window.__NC.go(${pageInfo.page}); })();`);
+
+                      // re-apply highlight for visibility
+                      if (n.highlight?.start_offset != null && n.highlight?.end_offset != null) {
+                        inject(`(function(){
+                          window.__NC && window.__NC.applyHighlightToParagraph &&
+                          window.__NC.applyHighlightToParagraph(${n.highlight.start_offset}, ${n.highlight.end_offset}, "${n.highlight.color || "#FFF59D"}");
+                        })();`);
+                      }
+                    }}
+                    style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#eee" }}
+                  >
+                    <Text numberOfLines={2} style={{ fontWeight: "600" }}>
+                      {n.highlight?.text_snippet ?? "Selected text"}
+                    </Text>
+                    <Text numberOfLines={3} style={{ color: colors.secondary, marginTop: 4 }}>
+                      {n.body}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </View>
+
+            <View style={{ marginTop: 12, flexDirection: "row", justifyContent: "flex-end" }}>
+              <TouchableOpacity onPress={() => setShowNotesModal(false)} style={{ padding: 8 }}>
+                <Text style={{ color: colors.secondary }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Note editor modal */}
+      <Modal visible={noteEditorVisible} transparent animationType="fade" onRequestClose={() => setNoteEditorVisible(false)}>
+        <Pressable style={styles.overlay} onPress={() => setNoteEditorVisible(false)}>
+          <Pressable style={[styles.pickerCard, { top: pickerPos.y, left: pickerPos.x, width: 320 }]} onPress={() => {}}>
+            <Text style={{ fontWeight: "700", marginBottom: 8 }}>Add note</Text>
+
+            <Text style={{ marginBottom: 8, color: colors.secondary }}>
+              {pendingSelection?.text_snippet ?? ""}
+            </Text>
+
+            <TextInput
+              placeholder="Write your note..."
+              multiline
+              value={noteText}
+              onChangeText={setNoteText}
+              style={styles.noteInput}
+            />
+
+            <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+              <TouchableOpacity
+                onPress={() => setNoteEditorVisible(false)}
+                style={{ padding: 8 }}
+                disabled={isSavingNote}
+              >
+                <Text style={{ color: colors.secondary }}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={saveNote} style={{ padding: 8 }} disabled={isSavingNote}>
+                <Text style={{ fontWeight: "700" }}>{isSavingNote ? "Saving..." : "Save"}</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Highlight Picker */}
       <Modal visible={showPicker} transparent animationType="fade" onRequestClose={cancelPicker}>
         <Pressable style={styles.overlay} onPress={cancelPicker}>
@@ -734,7 +1071,13 @@ html,body{
             </View>
 
             <View style={styles.pickerActions}>
-              <TouchableOpacity style={styles.actionBtn} onPress={handleAddNote}>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => {
+                  setShowPicker(false);
+                  handleAddNote();
+                }}
+              >
                 <Ionicons name="create-outline" size={18} color={colors.secondary} />
                 <Text style={styles.actionText}>Add Note</Text>
               </TouchableOpacity>
@@ -805,7 +1148,6 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.2)" },
   pickerCard: {
     position: "absolute",
-    width: 220,
     backgroundColor: "#fff",
     borderRadius: 14,
     padding: 12,
@@ -821,4 +1163,14 @@ const styles = StyleSheet.create({
   pickerActions: { marginTop: 8, borderTopWidth: 1, borderTopColor: "#F3F4F6", paddingTop: 10 },
   actionBtn: { flexDirection: "row", alignItems: "center", paddingVertical: 8 },
   actionText: { marginLeft: 10, color: colors.secondary, fontSize: typography.fontSizes.sm },
+
+  noteInput: {
+    minHeight: 90,
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    textAlignVertical: "top",
+  },
 });

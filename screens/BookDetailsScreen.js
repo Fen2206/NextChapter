@@ -169,6 +169,17 @@ export default function BookDetailsScreen({ route, navigation }) {
   const [friendEmails, setFriendEmails] = useState('');
   const [savingToShelf, setSavingToShelf] = useState(false);
 
+  const [ratingState, setRatingState] = useState({
+    loading: true,
+    saving: false,
+    userRating: 0,
+    appAverageRating: null,
+    appTotalRatings: 0,
+    sourceAverageRating:
+      typeof incomingBook?.rating === 'number' ? incomingBook.rating : null,
+    sourceTotalRatings: incomingBook?.ratingsCount ?? 0,
+  });
+
   const book = useMemo(() => {
     return {
       id: incomingBook?.id ?? null,
@@ -225,6 +236,58 @@ export default function BookDetailsScreen({ route, navigation }) {
     }
   };
 
+  const loadRatingState = async (internalBookId) => {
+    try {
+      setRatingState((prev) => ({ ...prev, loading: true }));
+
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+
+      const user = authData?.user;
+
+      const [{ data: aggregateRows, error: aggregateErr }, userRatingResult] =
+        await Promise.all([
+          supabase
+            .from('book_ratings')
+            .select('rating')
+            .eq('book_id', internalBookId),
+          user
+            ? supabase
+                .from('book_ratings')
+                .select('rating')
+                .eq('user_id', user.id)
+                .eq('book_id', internalBookId)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        ]);
+
+      if (aggregateErr) throw aggregateErr;
+      if (userRatingResult?.error) throw userRatingResult.error;
+
+      const ratings = aggregateRows || [];
+      const appTotalRatings = ratings.length;
+      const appAverageRating =
+        appTotalRatings > 0
+          ? ratings.reduce((sum, row) => sum + Number(row.rating || 0), 0) /
+            appTotalRatings
+          : null;
+
+      setRatingState({
+        loading: false,
+        saving: false,
+        userRating: userRatingResult?.data?.rating ?? 0,
+        appAverageRating,
+        appTotalRatings,
+        sourceAverageRating:
+          typeof incomingBook?.rating === 'number' ? incomingBook.rating : null,
+        sourceTotalRatings: incomingBook?.ratingsCount ?? 0,
+      });
+    } catch (e) {
+      console.log('Rating load error:', e?.message);
+      setRatingState((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -247,6 +310,16 @@ export default function BookDetailsScreen({ route, navigation }) {
               currentPage: 0,
               progress: 0,
             });
+            setRatingState((prev) => ({
+              ...prev,
+              loading: false,
+              userRating: 0,
+              appAverageRating: null,
+              appTotalRatings: 0,
+              sourceAverageRating:
+                typeof incomingBook?.rating === 'number' ? incomingBook.rating : null,
+              sourceTotalRatings: incomingBook?.ratingsCount ?? 0,
+            }));
           }
           return;
         }
@@ -270,6 +343,16 @@ export default function BookDetailsScreen({ route, navigation }) {
               currentPage: 0,
               progress: 0,
             });
+            setRatingState((prev) => ({
+              ...prev,
+              loading: false,
+              userRating: 0,
+              appAverageRating: null,
+              appTotalRatings: 0,
+              sourceAverageRating:
+                typeof incomingBook?.rating === 'number' ? incomingBook.rating : null,
+              sourceTotalRatings: incomingBook?.ratingsCount ?? 0,
+            }));
           }
           return;
         }
@@ -313,10 +396,13 @@ export default function BookDetailsScreen({ route, navigation }) {
             progress,
           });
         }
+
+        await loadRatingState(internalBookId);
       } catch (e) {
         console.log('Book state load error:', e?.message);
         if (mounted) {
           setLibraryState((prev) => ({ ...prev, loading: false }));
+          setRatingState((prev) => ({ ...prev, loading: false }));
         }
       }
     };
@@ -330,6 +416,68 @@ export default function BookDetailsScreen({ route, navigation }) {
       mounted = false;
     };
   }, [incomingBook, storageKey, book.pageCount]);
+
+  const saveUserRating = async (selectedRating) => {
+    try {
+      setRatingState((prev) => ({ ...prev, saving: true }));
+
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+
+      const user = authData?.user;
+      if (!user) {
+        Alert.alert('Not signed in', 'Please sign in to rate books.');
+        return;
+      }
+
+      let internalBookId = libraryState.internalBookId;
+      if (!internalBookId) {
+        const bookRow = await ensureBookRow();
+        internalBookId = bookRow.id;
+        setLibraryState((prev) => ({
+          ...prev,
+          internalBookId: bookRow.id,
+        }));
+      }
+
+      const { error } = await supabase
+        .from('book_ratings')
+        .upsert(
+          {
+            user_id: user.id,
+            book_id: internalBookId,
+            rating: selectedRating,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,book_id' }
+        );
+
+      if (error) throw error;
+
+      await loadRatingState(internalBookId);
+    } catch (e) {
+      Alert.alert('Rating failed', e?.message ?? 'Unknown error');
+    } finally {
+      setRatingState((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const renderInteractiveStars = () => {
+    return [1, 2, 3, 4, 5].map((star) => (
+      <TouchableOpacity
+        key={star}
+        onPress={() => saveUserRating(star)}
+        disabled={ratingState.saving}
+        style={styles.ratingStarButton}
+      >
+        <Ionicons
+          name={star <= ratingState.userRating ? 'star' : 'star-outline'}
+          size={24}
+          color="#FFD700"
+        />
+      </TouchableOpacity>
+    ));
+  };
 
   const getStatusInfo = () => {
     if (libraryState.readingStatus === 'reading') {
@@ -757,8 +905,8 @@ export default function BookDetailsScreen({ route, navigation }) {
   };
 
   const handleJoinBookClub = () => {
-  navigation.getParent()?.navigate('Community');
-};
+    navigation.getParent()?.navigate('Community');
+  };
 
   if (!incomingBook) {
     return (
@@ -834,17 +982,51 @@ export default function BookDetailsScreen({ route, navigation }) {
               )}
 
               <View style={styles.ratingContainer}>
-                {typeof book.rating === 'number' ? (
-                  <>
-                    <View style={styles.stars}>{renderStars(book.rating)}</View>
-                    <Text style={styles.ratingText}>
-                      {book.rating.toFixed(2)} (
-                      {(book.totalRatings || 0).toLocaleString()} ratings)
-                    </Text>
-                  </>
-                ) : (
-                  <Text style={styles.ratingText}>No rating available</Text>
-                )}
+                <View style={styles.ratingBlock}>
+                  <Text style={styles.ratingLabel}>Book Rating</Text>
+                  {typeof ratingState.sourceAverageRating === 'number' ? (
+                    <>
+                      <View style={styles.stars}>
+                        {renderStars(ratingState.sourceAverageRating)}
+                      </View>
+                      <Text style={styles.ratingText}>
+                        {ratingState.sourceAverageRating.toFixed(2)} (
+                        {(ratingState.sourceTotalRatings || 0).toLocaleString()} ratings)
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={styles.ratingText}>No source rating available</Text>
+                  )}
+                </View>
+
+                <View style={styles.ratingBlock}>
+                  <Text style={styles.ratingLabel}>Our Users&apos; Rating</Text>
+                  {ratingState.loading ? (
+                    <ActivityIndicator size="small" color={colors.buttonPrimary} />
+                  ) : typeof ratingState.appAverageRating === 'number' ? (
+                    <>
+                      <View style={styles.stars}>
+                        {renderStars(ratingState.appAverageRating)}
+                      </View>
+                      <Text style={styles.ratingText}>
+                        {ratingState.appAverageRating.toFixed(2)} (
+                        {(ratingState.appTotalRatings || 0).toLocaleString()} ratings)
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={styles.ratingText}>No user ratings yet</Text>
+                  )}
+                </View>
+
+                <View style={styles.userRatingBlock}>
+                  <Text style={styles.userRatingLabel}>Your Rating</Text>
+                  <View style={styles.userStarsRow}>{renderInteractiveStars()}</View>
+                  <Text style={styles.userRatingHint}>
+                    {ratingState.userRating > 0
+                      ? `You rated this ${ratingState.userRating}/5. Tap a star to change it.`
+                      : 'Tap a star to rate this book.'}
+                  </Text>
+                </View>
               </View>
 
               <View style={styles.infoRow}>
@@ -1249,6 +1431,15 @@ const styles = StyleSheet.create({
   ratingContainer: {
     marginBottom: spacing.md,
   },
+  ratingBlock: {
+    marginBottom: spacing.md,
+  },
+  ratingLabel: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.primary,
+    fontWeight: typography.fontWeights.semibold,
+    marginBottom: spacing.xs,
+  },
   stars: {
     flexDirection: 'row',
     marginBottom: spacing.xs,
@@ -1256,6 +1447,28 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
+  },
+  userRatingBlock: {
+    marginTop: spacing.xs,
+  },
+  userRatingLabel: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.primary,
+    fontWeight: typography.fontWeights.semibold,
+    marginBottom: spacing.xs,
+  },
+  userStarsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingStarButton: {
+    marginRight: spacing.xs,
+    paddingVertical: 2,
+  },
+  userRatingHint: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.secondary,
+    marginTop: spacing.xs,
   },
 
   infoRow: {
@@ -1312,6 +1525,10 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.buttonPrimary,
     borderRadius: 4,
+  },
+  progressText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.secondary,
   },
 
   actionButtonsBlock: {

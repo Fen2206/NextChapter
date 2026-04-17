@@ -192,46 +192,7 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Continue Reading Section */}
-          {currentlyReading.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Continue Reading</Text>
-              {currentlyReading.map((userBook) => {
-                const book = userBook.books;
-                const progress = book?.page_count
-                  ? Math.round((userBook.current_page / book.page_count) * 100)
-                  : 0;
-                const authors = Array.isArray(book?.authors)
-                  ? book.authors.join(', ')
-                  : book?.authors || '';
-                return (
-                  <TouchableOpacity
-                    key={userBook.id}
-                    style={styles.currentlyReadingCard}
-                    onPress={() => handleBookPress(book)}
-                    activeOpacity={0.7}
-                  >
-                    <Image source={{ uri: book?.cover_url }} style={styles.currentlyReadingCover} resizeMode="cover" />
-                    <View style={styles.currentlyReadingInfo}>
-                      <Text style={styles.bookTitle} numberOfLines={2}>{book?.title}</Text>
-                      <Text style={styles.bookAuthor}>{authors}</Text>
-                      <View style={styles.progressContainer}>
-                        <View style={styles.progressBar}>
-                          <View style={[styles.progressFill, { width: `${progress}%` }]} />
-                        </View>
-                        <Text style={styles.progressText}>{progress}%</Text>
-                      </View>
-                      <Text style={styles.pageCount}>Page {userBook.current_page} of {book?.page_count}</Text>
-                      <TouchableOpacity style={styles.continueButton} onPress={() => handleBeginReading(book)}>
-                        <Text style={styles.continueButtonText}>Continue Reading</Text>
-                        <Ionicons name="arrow-forward" size={16} color={colors.buttonText} />
-                      </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
+        
 
           {/* Recommended for You — Books */}
           <View style={styles.section}>

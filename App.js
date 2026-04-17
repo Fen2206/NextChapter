@@ -5,7 +5,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import { useEffect, useRef } from 'react';
-import ClubDetailScreen from './screens/ClubDetailScreen';
+//import ClubDetailScreen from './screens/ClubDetailScreen';
 import { supabase } from './lib/supabase';
 
 // Import all of the screens
@@ -23,7 +23,7 @@ import NewPasswordScreen from './screens/NewPasswordScreen';
 import BooksPage from './screens/BooksPage';
 import LoginScreen from './screens/LoginScreen';
 import ReadingStatsScreen from './screens/ReadingStatsScreen';
-import ReadingViewScreen from './screens/ReadingViewScreen';
+import ReadingViewScreen from './screens/readerScreen';
 //import BookClubScreen from './screens/BookClubScreen';
 
 
@@ -98,23 +98,7 @@ function MyBooksStack() {
   );
 }
 
-function CommunityStack() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="CommunityMain" component={CommunityScreen} />
-      <Stack.Screen
-        name="ClubDetail"
-        component={ClubDetailScreen}
-        options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: colors.navBackground },
-          headerTintColor: colors.navText,
-          headerTitle: 'Book Club',
-        }}
-      />
-    </Stack.Navigator>
-  );
-}
+
 
 // Profile Stack
 function ProfileStack() {
