@@ -153,6 +153,9 @@ export default function BookDetailsScreen({ route, navigation }) {
   const incomingBook = route?.params?.book ?? null;
 
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [ratingModalVisible, setRatingModalVisible] = useState(false);
+  const [selectedUserRating, setSelectedUserRating] = useState(0);
+
   const [libraryState, setLibraryState] = useState({
     loading: true,
     isSaved: false,
@@ -272,16 +275,20 @@ export default function BookDetailsScreen({ route, navigation }) {
             appTotalRatings
           : null;
 
+      const userRating = userRatingResult?.data?.rating ?? 0;
+
       setRatingState({
         loading: false,
         saving: false,
-        userRating: userRatingResult?.data?.rating ?? 0,
+        userRating,
         appAverageRating,
         appTotalRatings,
         sourceAverageRating:
           typeof incomingBook?.rating === 'number' ? incomingBook.rating : null,
         sourceTotalRatings: incomingBook?.ratingsCount ?? 0,
       });
+
+      setSelectedUserRating(userRating);
     } catch (e) {
       console.log('Rating load error:', e?.message);
       setRatingState((prev) => ({ ...prev, loading: false }));
@@ -417,8 +424,32 @@ export default function BookDetailsScreen({ route, navigation }) {
     };
   }, [incomingBook, storageKey, book.pageCount]);
 
-  const saveUserRating = async (selectedRating) => {
+  const ensureBookRow = async () => {
+    const bookRow = {
+      google_volume_id: storageKey,
+      title: book.title,
+      authors: book.author && book.author !== 'Unknown author' ? [book.author] : null,
+      cover_url: book.cover,
+      page_count: book.pageCount || null,
+    };
+
+    const { data, error } = await supabase
+      .from('books')
+      .upsert(bookRow, { onConflict: 'google_volume_id' })
+      .select('id, page_count')
+      .single();
+
+    if (error) throw error;
+    return data;
+  };
+
+  const submitUserRating = async () => {
     try {
+      if (!selectedUserRating || selectedUserRating < 1) {
+        Alert.alert('Choose a rating', 'Please tap at least one star.');
+        return;
+      }
+
       setRatingState((prev) => ({ ...prev, saving: true }));
 
       const { data: authData, error: authErr } = await supabase.auth.getUser();
@@ -446,7 +477,7 @@ export default function BookDetailsScreen({ route, navigation }) {
           {
             user_id: user.id,
             book_id: internalBookId,
-            rating: selectedRating,
+            rating: selectedUserRating,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'user_id,book_id' }
@@ -455,28 +486,12 @@ export default function BookDetailsScreen({ route, navigation }) {
       if (error) throw error;
 
       await loadRatingState(internalBookId);
+      setRatingModalVisible(false);
     } catch (e) {
       Alert.alert('Rating failed', e?.message ?? 'Unknown error');
     } finally {
       setRatingState((prev) => ({ ...prev, saving: false }));
     }
-  };
-
-  const renderInteractiveStars = () => {
-    return [1, 2, 3, 4, 5].map((star) => (
-      <TouchableOpacity
-        key={star}
-        onPress={() => saveUserRating(star)}
-        disabled={ratingState.saving}
-        style={styles.ratingStarButton}
-      >
-        <Ionicons
-          name={star <= ratingState.userRating ? 'star' : 'star-outline'}
-          size={24}
-          color="#FFD700"
-        />
-      </TouchableOpacity>
-    ));
   };
 
   const getStatusInfo = () => {
@@ -528,7 +543,7 @@ export default function BookDetailsScreen({ route, navigation }) {
   const mainButtonIcon =
     libraryState.readingStatus === 'reading' ? 'play' : 'book-outline';
 
-  const renderStars = (rating) => {
+  const renderStars = (rating, size = 14) => {
     if (typeof rating !== 'number') return null;
 
     const stars = [];
@@ -537,12 +552,12 @@ export default function BookDetailsScreen({ route, navigation }) {
     const hasHalfStar = safeRating % 1 !== 0;
 
     for (let i = 0; i < fullStars; i++) {
-      stars.push(<Ionicons key={i} name="star" size={18} color="#FFD700" />);
+      stars.push(<Ionicons key={i} name="star" size={size} color="#FFD700" />);
     }
 
     if (hasHalfStar && fullStars < 5) {
       stars.push(
-        <Ionicons key="half" name="star-half" size={18} color="#FFD700" />
+        <Ionicons key="half" name="star-half" size={size} color="#FFD700" />
       );
     }
 
@@ -552,7 +567,7 @@ export default function BookDetailsScreen({ route, navigation }) {
         <Ionicons
           key={`empty-${i}`}
           name="star-outline"
-          size={18}
+          size={size}
           color="#FFD700"
         />
       );
@@ -561,23 +576,21 @@ export default function BookDetailsScreen({ route, navigation }) {
     return stars;
   };
 
-  const ensureBookRow = async () => {
-    const bookRow = {
-      google_volume_id: storageKey,
-      title: book.title,
-      authors: book.author && book.author !== 'Unknown author' ? [book.author] : null,
-      cover_url: book.cover,
-      page_count: book.pageCount || null,
-    };
-
-    const { data, error } = await supabase
-      .from('books')
-      .upsert(bookRow, { onConflict: 'google_volume_id' })
-      .select('id, page_count')
-      .single();
-
-    if (error) throw error;
-    return data;
+  const renderModalStars = () => {
+    return [1, 2, 3, 4, 5].map((star) => (
+      <TouchableOpacity
+        key={star}
+        onPress={() => setSelectedUserRating(star)}
+        style={styles.modalStarButton}
+        activeOpacity={0.75}
+      >
+        <Ionicons
+          name={star <= selectedUserRating ? 'star' : 'star-outline'}
+          size={30}
+          color="#FFD700"
+        />
+      </TouchableOpacity>
+    ));
   };
 
   const upsertUserBookReading = async (bookId, pageToUse = 1) => {
@@ -905,7 +918,25 @@ export default function BookDetailsScreen({ route, navigation }) {
   };
 
   const handleJoinBookClub = () => {
-    navigation.getParent()?.navigate('Community');
+    navigation.getParent()?.navigate('Community Rating');
+  };
+
+  const openRatingModal = async () => {
+    try {
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+
+      const user = authData?.user;
+      if (!user) {
+        Alert.alert('Not signed in', 'Please sign in to rate books.');
+        return;
+      }
+
+      setSelectedUserRating(ratingState.userRating || 0);
+      setRatingModalVisible(true);
+    } catch (e) {
+      Alert.alert('Unable to rate', e?.message ?? 'Unknown error');
+    }
   };
 
   if (!incomingBook) {
@@ -927,7 +958,7 @@ export default function BookDetailsScreen({ route, navigation }) {
 
   return (
     <>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.topBackRow}>
           <TouchableOpacity
             onPress={() => {
@@ -981,54 +1012,6 @@ export default function BookDetailsScreen({ route, navigation }) {
                 </View>
               )}
 
-              <View style={styles.ratingContainer}>
-                <View style={styles.ratingBlock}>
-                  <Text style={styles.ratingLabel}>Book Rating</Text>
-                  {typeof ratingState.sourceAverageRating === 'number' ? (
-                    <>
-                      <View style={styles.stars}>
-                        {renderStars(ratingState.sourceAverageRating)}
-                      </View>
-                      <Text style={styles.ratingText}>
-                        {ratingState.sourceAverageRating.toFixed(2)} (
-                        {(ratingState.sourceTotalRatings || 0).toLocaleString()} ratings)
-                      </Text>
-                    </>
-                  ) : (
-                    <Text style={styles.ratingText}>No source rating available</Text>
-                  )}
-                </View>
-
-                <View style={styles.ratingBlock}>
-                  <Text style={styles.ratingLabel}>Our Users&apos; Rating</Text>
-                  {ratingState.loading ? (
-                    <ActivityIndicator size="small" color={colors.buttonPrimary} />
-                  ) : typeof ratingState.appAverageRating === 'number' ? (
-                    <>
-                      <View style={styles.stars}>
-                        {renderStars(ratingState.appAverageRating)}
-                      </View>
-                      <Text style={styles.ratingText}>
-                        {ratingState.appAverageRating.toFixed(2)} (
-                        {(ratingState.appTotalRatings || 0).toLocaleString()} ratings)
-                      </Text>
-                    </>
-                  ) : (
-                    <Text style={styles.ratingText}>No user ratings yet</Text>
-                  )}
-                </View>
-
-                <View style={styles.userRatingBlock}>
-                  <Text style={styles.userRatingLabel}>Your Rating</Text>
-                  <View style={styles.userStarsRow}>{renderInteractiveStars()}</View>
-                  <Text style={styles.userRatingHint}>
-                    {ratingState.userRating > 0
-                      ? `You rated this ${ratingState.userRating}/5. Tap a star to change it.`
-                      : 'Tap a star to rate this book.'}
-                  </Text>
-                </View>
-              </View>
-
               <View style={styles.infoRow}>
                 <View style={styles.infoPill}>
                   <Ionicons
@@ -1051,6 +1034,65 @@ export default function BookDetailsScreen({ route, navigation }) {
                 </View>
               </View>
             </View>
+          </View>
+
+          <View style={styles.ratingCard}>
+            <View style={styles.ratingTopRow}>
+              <View style={styles.ratingStatBox}>
+                <Text style={styles.ratingStatLabel}>Rating</Text>
+                {typeof ratingState.sourceAverageRating === 'number' ? (
+                  <>
+                    <Text style={styles.ratingStatValue}>
+                      {ratingState.sourceAverageRating.toFixed(1)}
+                    </Text>
+                    <View style={styles.compactStars}>
+                      {renderStars(ratingState.sourceAverageRating, 13)}
+                    </View>
+                    <Text style={styles.ratingCountText}>
+                      {(ratingState.sourceTotalRatings || 0).toLocaleString()} ratings
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.ratingEmptyText}>N/A</Text>
+                )}
+              </View>
+
+              <View style={styles.ratingDividerVertical} />
+
+              <View style={styles.ratingStatBox}>
+                <Text style={styles.ratingStatLabel}>Community</Text>
+                {ratingState.loading ? (
+                  <ActivityIndicator size="small" color={colors.buttonPrimary} />
+                ) : typeof ratingState.appAverageRating === 'number' ? (
+                  <>
+                    <Text style={styles.ratingStatValue}>
+                      {ratingState.appAverageRating.toFixed(1)}
+                    </Text>
+                    <View style={styles.compactStars}>
+                      {renderStars(ratingState.appAverageRating, 13)}
+                    </View>
+                    <Text style={styles.ratingCountText}>
+                      {(ratingState.appTotalRatings || 0).toLocaleString()} ratings
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.ratingEmptyText}>No ratings yet</Text>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.ratingDividerHorizontal} />
+
+            <TouchableOpacity
+              style={styles.rateButton}
+              onPress={openRatingModal}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="star-outline" size={16} color={colors.primary} />
+              <Text style={styles.rateButtonText}>
+                {ratingState.userRating > 0 ? 'Add Rating' : 'Rate'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {libraryState.readingStatus === 'reading' && (
@@ -1204,6 +1246,51 @@ export default function BookDetailsScreen({ route, navigation }) {
           >
             <Text style={styles.closePreviewText}>✕ Close</Text>
           </TouchableOpacity>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={ratingModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRatingModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.ratingModalCard}>
+            <Text style={styles.ratingModalTitle}>Rate this book</Text>
+            <Text style={styles.ratingModalSubtitle} numberOfLines={2}>
+              {book.title}
+            </Text>
+
+            <View style={styles.ratingModalStarsRow}>
+              {renderModalStars()}
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => {
+                  setSelectedUserRating(ratingState.userRating || 0);
+                  setRatingModalVisible(false);
+                }}
+                disabled={ratingState.saving}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalSaveButton]}
+                onPress={submitUserRating}
+                disabled={ratingState.saving}
+              >
+                {ratingState.saving ? (
+                  <ActivityIndicator color={colors.buttonText} />
+                ) : (
+                  <Text style={styles.modalSaveText}>Submit</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
 
@@ -1363,7 +1450,7 @@ const styles = StyleSheet.create({
 
   headerSection: {
     flexDirection: 'row',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   coverContainer: {
     position: 'relative',
@@ -1428,49 +1515,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.medium,
   },
 
-  ratingContainer: {
-    marginBottom: spacing.md,
-  },
-  ratingBlock: {
-    marginBottom: spacing.md,
-  },
-  ratingLabel: {
-    fontSize: typography.fontSizes.sm,
-    color: colors.primary,
-    fontWeight: typography.fontWeights.semibold,
-    marginBottom: spacing.xs,
-  },
-  stars: {
-    flexDirection: 'row',
-    marginBottom: spacing.xs,
-  },
-  ratingText: {
-    fontSize: typography.fontSizes.sm,
-    color: colors.secondary,
-  },
-  userRatingBlock: {
-    marginTop: spacing.xs,
-  },
-  userRatingLabel: {
-    fontSize: typography.fontSizes.sm,
-    color: colors.primary,
-    fontWeight: typography.fontWeights.semibold,
-    marginBottom: spacing.xs,
-  },
-  userStarsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  ratingStarButton: {
-    marginRight: spacing.xs,
-    paddingVertical: 2,
-  },
-  userRatingHint: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.secondary,
-    marginTop: spacing.xs,
-  },
-
   infoRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -1488,6 +1532,83 @@ const styles = StyleSheet.create({
   infoPillText: {
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
+  },
+
+  ratingCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  ratingTopRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  ratingStatBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+  },
+  ratingStatLabel: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.secondary,
+    fontWeight: typography.fontWeights.medium,
+    marginBottom: 4,
+  },
+  ratingStatValue: {
+    fontSize: 24,
+    color: colors.primary,
+    fontWeight: typography.fontWeights.bold,
+    marginBottom: 3,
+  },
+  compactStars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  ratingCountText: {
+    fontSize: 11,
+    color: colors.secondary,
+    textAlign: 'center',
+  },
+  ratingEmptyText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.secondary,
+    fontWeight: typography.fontWeights.medium,
+    marginTop: 6,
+  },
+  ratingDividerVertical: {
+    width: 1,
+    backgroundColor: colors.border,
+    marginVertical: 6,
+  },
+  ratingDividerHorizontal: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  rateButton: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  rateButtonText: {
+    color: colors.primary,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
   },
 
   progressSection: {
@@ -1663,6 +1784,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.lg,
   },
+
+  ratingModalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.lg,
+  },
+  ratingModalTitle: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  ratingModalSubtitle: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.secondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  ratingModalStarsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  modalStarButton: {
+    marginHorizontal: 6,
+  },
+
   modalCard: {
     backgroundColor: colors.surface,
     borderRadius: 16,
