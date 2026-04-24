@@ -957,7 +957,13 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
 
-  horizontalScroll: { paddingLeft: spacing.lg, paddingBottom: spacing.xs },
+  horizontalScroll: {
+    paddingLeft: spacing.lg,
+    paddingBottom: spacing.xs,
+    ...(Platform.OS === "ios" || Platform.OS === "android"
+      ? { paddingTop: spacing.md }
+      : {}),
+  },
 
   bookCard: {
     width: 138,

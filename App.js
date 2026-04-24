@@ -3,6 +3,7 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import 'react-native-gesture-handler';
+import { Platform, Text, TouchableOpacity } from 'react-native';
 import * as Linking from 'expo-linking';
 import { useEffect, useRef } from 'react';
 //import ClubDetailScreen from './screens/ClubDetailScreen';
@@ -35,6 +36,20 @@ const Drawer = createDrawerNavigator();
 const Stack = createStackNavigator();
 
 const prefix = Linking.createURL('/');
+
+const renderDrawerLabel = (label) => ({ focused, color }) => (
+  <Text
+    style={{
+      fontSize: focused ? 17 : 16,
+      fontWeight: focused ? '700' : '500',
+      fontFamily: focused ? 'Georgia' : 'System',
+      color,
+      marginLeft: 1,
+    }}
+  >
+    {label}
+  </Text>
+);
 
 // Home Stack
 function HomeStack() {
@@ -148,28 +163,42 @@ function CommunityStack() {
 }
 
 function DrawerNavigator() {
+  const isPhone = Platform.OS === 'ios' || Platform.OS === 'android';
+
   return (
     <Drawer.Navigator
       initialRouteName="Home"
-      screenOptions={{
+      screenOptions={({ navigation }) => ({
         headerStyle: { backgroundColor: colors.navBackground },
         headerTintColor: colors.navText,
         headerTitleStyle: { fontWeight: '600', fontSize: 18 },
+        headerLeft: isPhone
+          ? () => (
+              <TouchableOpacity
+                onPress={() => navigation.toggleDrawer()}
+                style={{ marginLeft: 14, paddingVertical: 4, paddingRight: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel="Open sidebar"
+              >
+                <Ionicons name="menu" size={28} color={colors.navText} />
+              </TouchableOpacity>
+            )
+          : undefined,
         drawerStyle: { backgroundColor: colors.sidebarBackground, width: 240 },
-        drawerActiveTintColor: colors.primary,
+        drawerActiveTintColor: colors.sidebarText,
         drawerInactiveTintColor: colors.sidebarText,
-        drawerActiveBackgroundColor: colors.sidebarActive,
-        drawerLabelStyle: { fontSize: 16, fontWeight: '500', marginLeft: -16 },
+        drawerActiveBackgroundColor: '#DCCBCB',
+        drawerLabelStyle: { fontSize: 16, fontWeight: '500' },
         drawerItemStyle: { borderRadius: 8, marginHorizontal: 8, marginVertical: 8, paddingVertical: 4 },
-      }}
+      })}
     >
       <Drawer.Screen
         name="Home"
         component={HomeStack}
         options={{
-          drawerLabel: 'Home',
+          drawerLabel: renderDrawerLabel('Home'),
           drawerIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} style={{ marginRight: 6 }} />
           ),
         }}
       />
@@ -177,10 +206,10 @@ function DrawerNavigator() {
         name="Search"
         component={SearchStack}
         options={{
-          drawerLabel: 'Search Books',
+          drawerLabel: renderDrawerLabel('Search Books'),
           title: 'Search',
           drawerIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'search' : 'search-outline'} size={size} color={color} />
+            <Ionicons name={focused ? 'search' : 'search-outline'} size={size} color={color} style={{ marginRight: 6 }} />
           ),
         }}
       />
@@ -188,10 +217,10 @@ function DrawerNavigator() {
         name="MyBooks"
         component={MyBooksStack}
         options={{
-          drawerLabel: 'My Books',
+          drawerLabel: renderDrawerLabel('My Books'),
           title: 'My Books',
           drawerIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'book' : 'book-outline'} size={size} color={color} />
+            <Ionicons name={focused ? 'book' : 'book-outline'} size={size} color={color} style={{ marginRight: 6 }} />
           ),
         }}
       />
@@ -199,10 +228,9 @@ function DrawerNavigator() {
         name="Community"
         component={CommunityStack}
         options={{
-          headerShown: false,
-          drawerLabel: 'Community',
+          drawerLabel: renderDrawerLabel('Community'),
           drawerIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'people' : 'people-outline'} size={size} color={color} />
+            <Ionicons name={focused ? 'people' : 'people-outline'} size={size} color={color} style={{ marginRight: 6 }} />
           ),
         }}
       />
@@ -211,10 +239,10 @@ function DrawerNavigator() {
         name="Profile"
         component={ProfileStack}
         options={{
-          drawerLabel: 'User Profile',
+          drawerLabel: renderDrawerLabel('User Profile'),
           title: 'User Profile',
           drawerIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} style={{ marginRight: 6 }} />
           ),
         }}
       />

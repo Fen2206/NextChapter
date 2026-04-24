@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   ImageBackground,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -14,6 +15,8 @@ import { supabase } from '../lib/supabase';
 import { colors, typography, spacing } from '../theme';
 
 export default function ProfileScreen({ navigation }) {
+  const isPhone = Platform.OS === 'ios' || Platform.OS === 'android';
+
   const [user, setUser] = useState(null);
   const [recentBooks, setRecentBooks] = useState([]);
   const [recentNotes, setRecentNotes] = useState([]);
@@ -28,6 +31,31 @@ export default function ProfileScreen({ navigation }) {
 
   const avatarFallback =
     'https://ui-avatars.com/api/?name=Reader&size=200&background=4A4A4A&color=fff';
+
+  const buildAvatarUrl = (name) =>
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      name || 'Reader'
+    )}&size=200&background=4A4A4A&color=fff`;
+
+  const isReaderPlaceholderAvatar = (url) => {
+    if (!url || typeof url !== 'string') return false;
+    const lowerUrl = decodeURIComponent(url).toLowerCase();
+    return lowerUrl.includes('ui-avatars.com') && lowerUrl.includes('name=reader');
+  };
+
+  const getInitials = (name, username) => {
+    const cleanedName = (name || '').trim();
+    if (cleanedName) {
+      const parts = cleanedName.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+      }
+      return cleanedName.slice(0, 2).toUpperCase();
+    }
+
+    const cleanedUsername = (username || '').replace('@', '').trim();
+    return cleanedUsername ? cleanedUsername.slice(0, 2).toUpperCase() : 'RE';
+  };
 
   const fetchProfileEverything = useCallback(async () => {
     try {
@@ -61,20 +89,29 @@ export default function ProfileScreen({ navigation }) {
 
       if (profileErr) throw profileErr;
 
+      const authUsername =
+        authUser.user_metadata?.username ||
+        authUser.user_metadata?.display_name ||
+        authUser.email?.split('@')[0] ||
+        'reader';
+
       const displayName =
-        profileData?.display_name || profileData?.username || 'Reader';
-      const username = `@${profileData?.username || 'reader'}`;
+        profileData?.display_name || profileData?.username || authUsername;
+      const username = `@${profileData?.username || authUsername}`;
+      const rawAvatarUrl = (profileData?.avatar_url || '').trim();
+      const resolvedAvatarUrl =
+        isPhone
+          ? buildAvatarUrl(displayName)
+          : rawAvatarUrl && !isReaderPlaceholderAvatar(rawAvatarUrl)
+            ? rawAvatarUrl
+            : buildAvatarUrl(displayName);
 
       setUser({
         name: displayName,
         username,
         email: authUser.email ?? '',
         bio: profileData?.bio || '',
-        avatar:
-          profileData?.avatar_url ||
-          `https://ui-avatars.com/api/?name=${encodeURIComponent(
-            displayName
-          )}&size=200&background=4A4A4A&color=fff`,
+        avatar: resolvedAvatarUrl,
         joinDate: authUser.created_at
           ? new Date(authUser.created_at).toLocaleDateString('en-US', {
               month: 'long',
@@ -249,15 +286,30 @@ export default function ProfileScreen({ navigation }) {
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
-            <Image
-              source={{ uri: user?.avatar || avatarFallback }}
-              style={styles.avatar}
-              onError={() => {
-                setUser((prev) =>
-                  prev ? { ...prev, avatar: avatarFallback } : prev
-                );
-              }}
-            />
+            {isPhone ? (
+              <View style={styles.avatarInitialsCircle}>
+                <Text style={styles.avatarInitialsText}>
+                  {getInitials(user?.name, user?.username)}
+                </Text>
+              </View>
+            ) : (
+              <Image
+                source={{ uri: user?.avatar || avatarFallback }}
+                style={styles.avatar}
+                onError={() => {
+                  setUser((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          avatar: buildAvatarUrl(
+                            prev.name || prev.username?.replace('@', '') || 'Reader'
+                          ),
+                        }
+                      : prev
+                  );
+                }}
+              />
+            )}
           </View>
 
           <Text style={styles.name}>{user?.name || 'Reader'}</Text>
@@ -509,6 +561,20 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 50,
     backgroundColor: colors.buttonPrimary,
+  },
+  avatarInitialsCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#55585c',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitialsText: {
+    color: '#FFFFFF',
+    fontSize: 30,
+    fontWeight: typography.fontWeights.medium,
+    letterSpacing: 1,
   },
   name: {
     fontSize: typography.fontSizes.xxl,

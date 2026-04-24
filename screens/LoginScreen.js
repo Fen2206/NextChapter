@@ -11,11 +11,17 @@ import {
   Image,
   ImageBackground,
   Keyboard,
+  useWindowDimensions,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
+  const { height } = useWindowDimensions();
+  const isCompactHeight = height < 760;
+  const isPhone = Platform.OS === 'ios' || Platform.OS === 'android';
+  const isWeb = Platform.OS === 'web';
+
   const [currentView, setCurrentView] = useState('choice'); // 'choice', 'login', 'register', 'forgotEmail', 'forgotOTP', 'forgotNewPassword'
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ username: '', email: '', password: '', confirm: '' });
@@ -80,17 +86,23 @@ export default function LoginScreen() {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: registerForm.email,
         password: registerForm.password,
+        options: {
+          data: {
+            username: registerForm.username,
+            display_name: registerForm.username,
+          },
+        },
       });
       if (signUpError) throw signUpError;
 
-      // 2. Update profile with username (trigger already created the row)
+      // 2. Update or create the profile row with the chosen username
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({
+        .upsert({
+          id: data.user.id,
           username: registerForm.username,
           display_name: registerForm.username,
-        })
-        .eq('id', data.user.id);
+        }, { onConflict: 'id' });
       if (profileError) throw profileError;
 
       // 3. Send new users to onboarding survey
@@ -156,12 +168,26 @@ export default function LoginScreen() {
   if (currentView === 'choice') {
     return (
       <ImageBackground source={require('../assets/background.png')} style={styles.container} resizeMode="cover">
-        <View style={styles.welcomeSection}>
+        <View
+          style={[
+            styles.welcomeSection,
+            isCompactHeight && styles.welcomeSectionCompact,
+            isPhone && styles.welcomeSectionPhone,
+            isPhone && isCompactHeight && styles.welcomeSectionPhoneCompact,
+          ]}
+        >
           <Text style={styles.welcomeTitle}>Welcome to</Text>
           <Text style={styles.appName}>Next Chapter</Text>
           <Text style={styles.tagline}>Read. Discover. Connect.</Text>
         </View>
-        <View style={styles.choiceContainer}>
+        <View
+          style={[
+            styles.choiceContainer,
+            isWeb && styles.choiceContainerWeb,
+            isPhone && styles.choiceContainerPhone,
+            isPhone && isCompactHeight && styles.choiceContainerPhoneCompact,
+          ]}
+        >
           <View style={styles.choiceCard}>
             <TouchableOpacity style={styles.primaryChoice} onPress={() => setCurrentView('register')}>
               <Text style={styles.primaryChoiceText}>I'm New Here</Text>
@@ -432,10 +458,19 @@ const styles = StyleSheet.create({
   },
   welcomeSection: {
     position: 'absolute',
-    top: 280,
+    top: 250,
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 30,
+  },
+  welcomeSectionCompact: {
+    top: 185,
+  },
+  welcomeSectionPhone: {
+    top: 280,
+  },
+  welcomeSectionPhoneCompact: {
+    top: 210,
   },
   welcomeTitle: {
     fontSize: 22,
@@ -443,6 +478,9 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     textAlign: 'center',
     fontFamily: 'Georgia',
+    textShadowColor: 'rgba(255, 255, 255, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   appName: {
     fontSize: 48,
@@ -451,6 +489,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: 'center',
     fontFamily: 'Georgia',
+    textShadowColor: 'rgba(255, 255, 255, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   tagline: {
     fontSize: 16,
@@ -458,13 +499,26 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     fontFamily: 'Georgia',
+    textShadowColor: 'rgba(255, 255, 255, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   choiceContainer: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     paddingHorizontal: 30,
-    paddingTop: 150,
+    paddingTop: 240,
+    paddingBottom: 70,
+  },
+  choiceContainerWeb: {
+    paddingBottom: 250,
+  },
+  choiceContainerPhone: {
+    paddingBottom: 115,
+  },
+  choiceContainerPhoneCompact: {
+    paddingBottom: 90,
   },
   choiceCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.85)',
