@@ -455,7 +455,7 @@ export default function BookDetailsScreen({ route, navigation }) {
         return;
       }
 
-      navigation.navigate('Reader', {
+      navigation.navigate('ReadingView', {
         book: {
           ...book,
           source: 'gutenberg',

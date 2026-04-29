@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -167,11 +168,10 @@ export default function SurveyScreen({ navigation, route }) {
             const cover = b.formats?.['image/jpeg'] ||
               'https://via.placeholder.com/140x210?text=No+Cover';
 
-            // prefer html text, fall back to plain text
+            // use plain text URL — matches how BooksPage saves Gutenberg books
             const textUrl =
-              b.formats?.['text/html; charset=utf-8'] ||
-              b.formats?.['text/html'] ||
               b.formats?.['text/plain; charset=utf-8'] ||
+              b.formats?.['text/plain; charset=us-ascii'] ||
               b.formats?.['text/plain'] ||
               null;
 
@@ -322,7 +322,7 @@ export default function SurveyScreen({ navigation, route }) {
     if (isRetake) {
       navigation.goBack();
     } else {
-      navigation.replace('Home');
+      navigation.replace('Main');
     }
   };
 
@@ -342,7 +342,7 @@ export default function SurveyScreen({ navigation, route }) {
                   style={[styles.chip, selected && styles.chipSelected]}
                   onPress={() => toggleGenre(genre.id)}
                 >
-                  <Ionicons name={genre.icon} size={18} color={selected ? '#FAFAFA' : '#4A4A4A'} />
+                  <Ionicons name={genre.icon} size={18} color={selected ? '#FAFAFA' : '#581215'} />
                   <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
                     {genre.label}
                   </Text>
@@ -368,7 +368,7 @@ export default function SurveyScreen({ navigation, route }) {
                   style={[styles.chip, selected && styles.chipSelected]}
                   onPress={() => toggleGoal(goal.id)}
                 >
-                  <Ionicons name={goal.icon} size={18} color={selected ? '#FAFAFA' : '#4A4A4A'} />
+                  <Ionicons name={goal.icon} size={18} color={selected ? '#FAFAFA' : '#581215'} />
                   <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
                     {goal.label}
                   </Text>
@@ -394,7 +394,7 @@ export default function SurveyScreen({ navigation, route }) {
                   style={[styles.formatCard, selected && styles.formatCardSelected]}
                   onPress={() => setSelectedFormat(format.id)}
                 >
-                  <Ionicons name={format.icon} size={24} color={selected ? '#FAFAFA' : '#4A4A4A'} />
+                  <Ionicons name={format.icon} size={24} color={selected ? '#FAFAFA' : '#581215'} />
                   <Text style={[styles.formatLabel, selected && styles.formatLabelSelected]}>
                     {format.label}
                   </Text>
@@ -445,13 +445,13 @@ export default function SurveyScreen({ navigation, route }) {
     if (currentStep === 'clubs') {
       return (
         <>
-          <Text style={styles.stepTitle}>Clubs picked for you!</Text>
+          <Text style={styles.stepTitle}>Clubs picked for you 🎉</Text>
           <Text style={styles.stepSubtitle}>
             Based on your interests — join any that look good!
           </Text>
 
           {loadingClubs ? (
-            <ActivityIndicator size="large" color="#4A4A4A" style={{ marginTop: 40 }} />
+            <ActivityIndicator size="large" color="#581215" style={{ marginTop: 40 }} />
           ) : recommendedClubs.length === 0 ? (
             <View style={styles.noClubs}>
               <Ionicons name="people-outline" size={48} color="#CCCCCC" />
@@ -466,7 +466,7 @@ export default function SurveyScreen({ navigation, route }) {
                   <View key={club.id} style={styles.clubCard}>
                     <View style={styles.clubInfo}>
                       <View style={styles.clubIconContainer}>
-                        <Ionicons name="people" size={22} color="#4A4A4A" />
+                        <Ionicons name="people" size={22} color="#581215" />
                       </View>
                       <View style={styles.clubText}>
                         <Text style={styles.clubName}>{club.name}</Text>
@@ -511,6 +511,7 @@ export default function SurveyScreen({ navigation, route }) {
   };
 
   return (
+    <ImageBackground source={require('../assets/background2.png')} style={styles.backgroundImage} resizeMode="cover">
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
@@ -542,7 +543,7 @@ export default function SurveyScreen({ navigation, route }) {
             style={styles.backButton}
             onPress={() => setStep((s) => s - 1)}
           >
-            <Ionicons name="chevron-back" size={20} color="#4A4A4A" />
+            <Ionicons name="chevron-back" size={20} color="#581215" />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
         )}
@@ -566,13 +567,19 @@ export default function SurveyScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',
@@ -581,11 +588,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 16,
     paddingBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
   appName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C2C2C',
+    color: '#581215',
+    fontFamily: 'Georgia',
   },
   skipText: {
     fontSize: 14,
@@ -606,10 +615,10 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 24,
-    backgroundColor: '#4A4A4A',
+    backgroundColor: '#581215',
   },
   dotDone: {
-    backgroundColor: '#4A4A4A',
+    backgroundColor: '#581215',
     opacity: 0.4,
   },
   content: {
@@ -619,7 +628,8 @@ const styles = StyleSheet.create({
   stepTitle: {
     fontSize: 26,
     fontWeight: 'bold',
-    color: '#2C2C2C',
+    color: '#1F1F1F',
+    fontFamily: 'Georgia',
     marginTop: 16,
     marginBottom: 8,
   },
@@ -640,16 +650,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1.5,
-    borderColor: '#CCCCCC',
-    backgroundColor: '#FFFFFF',
+    borderColor: '#581215',
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
   chipSelected: {
-    backgroundColor: '#4A4A4A',
-    borderColor: '#4A4A4A',
+    backgroundColor: '#581215',
+    borderColor: '#581215',
   },
   chipLabel: {
     fontSize: 14,
-    color: '#4A4A4A',
+    color: '#581215',
     fontWeight: '500',
   },
   chipLabelSelected: {
@@ -664,12 +674,12 @@ const styles = StyleSheet.create({
     gap: 14,
     padding: 18,
     borderWidth: 1.5,
-    borderColor: '#CCCCCC',
-    backgroundColor: '#FFFFFF',
+    borderColor: '#581215',
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
   formatCardSelected: {
-    backgroundColor: '#4A4A4A',
-    borderColor: '#4A4A4A',
+    backgroundColor: '#581215',
+    borderColor: '#581215',
   },
   formatLabel: {
     fontSize: 16,
@@ -689,12 +699,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 18,
     borderWidth: 1.5,
-    borderColor: '#CCCCCC',
-    backgroundColor: '#FFFFFF',
+    borderColor: '#581215',
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
   freqCardSelected: {
-    backgroundColor: '#4A4A4A',
-    borderColor: '#4A4A4A',
+    backgroundColor: '#581215',
+    borderColor: '#581215',
   },
   freqText: {
     flex: 1,
@@ -718,11 +728,12 @@ const styles = StyleSheet.create({
 
   // Club cards
   clubCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255,255,255,0.85)',
     borderWidth: 1.5,
-    borderColor: '#CCCCCC',
+    borderColor: '#581215',
     padding: 16,
     gap: 12,
+    borderRadius: 12,
   },
   clubInfo: {
     flexDirection: 'row',
@@ -763,11 +774,11 @@ const styles = StyleSheet.create({
   },
   genreTagText: {
     fontSize: 11,
-    color: '#4A4A4A',
+    color: '#581215',
     fontWeight: '500',
   },
   joinButton: {
-    backgroundColor: '#4A4A4A',
+    backgroundColor: '#581215',
     paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -799,7 +810,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: '#EEEEEE',
-    backgroundColor: '#FAFAFA',
+    backgroundColor: 'rgba(255,255,255,0.85)',
     gap: 12,
   },
   backButton: {
@@ -809,16 +820,16 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderWidth: 1.5,
-    borderColor: '#CCCCCC',
+    borderColor: '#581215',
   },
   backText: {
     fontSize: 15,
-    color: '#4A4A4A',
+    color: '#581215',
     fontWeight: '500',
   },
   nextButton: {
     flex: 1,
-    backgroundColor: '#4A4A4A',
+    backgroundColor: '#581215',
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -827,7 +838,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   nextButtonDisabled: {
-    backgroundColor: '#CCCCCC',
+    backgroundColor: 'rgba(88, 18, 21, 0.35)',
   },
   nextText: {
     color: '#FAFAFA',

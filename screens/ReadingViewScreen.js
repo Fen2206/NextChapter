@@ -1,7 +1,4 @@
 // ReadingViewScreen.js
-// Main reading screen where users read books and create highlights
-//load true book content 
-
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -21,6 +18,7 @@ import HighlightsSidebar from '../components/HighlightsSidebar';
 
 export default function ReadingViewScreen({ route, navigation }) {
   const book = route?.params?.book;
+  console.log('route params:', JSON.stringify(route?.params));
   const startPage = route?.params?.startPage || 1;
 
   const [highlights, setHighlights] = useState([]);
@@ -40,12 +38,11 @@ export default function ReadingViewScreen({ route, navigation }) {
 
   const bookTitle = book?.title || 'Unknown Book';
   const bookSource = book?.source || null;
-  const textUrl = book?.textUrl || book?.url || null;
+  const textUrl = route?.params?.url || book?.textUrl || book?.url || null;
   const previewUrl = book?.previewLink || book?.webReaderLink || null;
   const totalPages = book?.pages || book?.page_count || book?.totalPages || 0;
 
   useEffect(() => {
-  console.log('useEffect fired, source:', bookSource, 'textUrl:', textUrl);
     if (!book) return;
     if (bookSource === 'gutenberg' && textUrl) {
       fetchGutenbergText();
@@ -55,21 +52,12 @@ export default function ReadingViewScreen({ route, navigation }) {
   }, []);
 
   // extract book ID and fetch plain text from Gutenberg
-  
   const fetchGutenbergText = async () => {
-  console.log('fetchGutenbergText called, textUrl:', textUrl);
     setLoading(true);
     setError(null);
     try {
-      // extract numeric book ID from URL
-      // e.g. https://www.gutenberg.org/ebooks/30254.html.images -> 30254
-      const idMatch = textUrl.match(/\/(\d+)/);
-      if (!idMatch) throw new Error('Could not parse book ID');
-
-      const bookId = idMatch[1];
-      const plainTextUrl = `https://www.gutenberg.org/cache/epub/${bookId}/pg${bookId}.txt`;
-
-      const res = await fetch(plainTextUrl);
+      // textUrl is already a plain text URL from Gutenberg API
+      const res = await fetch(textUrl);
       if (!res.ok) throw new Error('Failed to fetch book text');
       const raw = await res.text();
       processText(raw);
@@ -119,10 +107,8 @@ export default function ReadingViewScreen({ route, navigation }) {
       .split(/\n\n+/)
       .map((l) => l.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim())
       .filter((l) => l.length > 50 && !l.startsWith('***') && !l.startsWith('_'));
-    console.log('content length:', content.length);
-    console.log('first 500 chars:', content.substring(0, 500));
-    console.log('paragraphs found:', paras.length);
-    setParagraphs(paras.slice(0, 80).map((text, i) => ({ id: `p${i}`, text }))); 
+
+    setParagraphs(paras.slice(0, 80).map((text, i) => ({ id: `p${i}`, text })));
   };
 
   // highlight handlers

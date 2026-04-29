@@ -47,6 +47,7 @@ function HomeStack() {
         }}
       />
       <Stack.Screen name="ReadingView" component={ReadingViewScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Reader" component={ReadingViewScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }
@@ -67,6 +68,7 @@ function SearchStack() {
         }}
       />
       <Stack.Screen name="ReadingView" component={ReadingViewScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Reader" component={ReadingViewScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }
@@ -87,6 +89,7 @@ function MyBooksStack() {
         }}
       />
       <Stack.Screen name="ReadingView" component={ReadingViewScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Reader" component={ReadingViewScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }
@@ -119,10 +122,10 @@ function DrawerNavigator() {
         headerTintColor: colors.navText,
         headerTitleStyle: { fontWeight: '600', fontSize: 18 },
         drawerStyle: { backgroundColor: colors.sidebarBackground, width: 240 },
-        drawerActiveTintColor: colors.primary,
+        drawerActiveTintColor: '#581215',
         drawerInactiveTintColor: colors.sidebarText,
-        drawerActiveBackgroundColor: colors.sidebarActive,
-        drawerLabelStyle: { fontSize: 16, fontWeight: '500', marginLeft: -16 },
+        drawerActiveBackgroundColor: 'rgba(88, 18, 21, 0.15)',
+        drawerLabelStyle: { fontSize: 16, fontWeight: '500', marginLeft: 8 },
         drawerItemStyle: { borderRadius: 8, marginHorizontal: 8, marginVertical: 8, paddingVertical: 4 },
       }}
     >

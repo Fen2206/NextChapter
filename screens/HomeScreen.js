@@ -58,7 +58,7 @@ export default function HomeScreen({ navigation }) {
         // fetch profile + preferences
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('username, display_name, preferences')
+          .select('username, display_name, preferences, avatar_url')
           .eq('id', user.id)
           .single();
 
@@ -68,6 +68,7 @@ export default function HomeScreen({ navigation }) {
           setProfile({
             username: profileData.username || fallbackUsername,
             display_name: profileData.display_name || '',
+            avatar_url: profileData.avatar_url || null,
           });
         }
 
@@ -182,7 +183,14 @@ export default function HomeScreen({ navigation }) {
           {/* Welcome Section */}
           <View style={styles.welcomeRow}>
             <View style={styles.welcomeIconCircle}>
-              <Ionicons name="person" size={20} color={colors.buttonText} />
+              {profile?.avatar_url ? (
+                <Image
+                  source={{ uri: profile.avatar_url }}
+                  style={{ width: 48, height: 48, borderRadius: 16 }}
+                />
+              ) : (
+                <Ionicons name="person" size={20} color={colors.buttonText} />
+              )}
             </View>
             <View style={styles.welcomeTextWrap}>
               <Text style={styles.title}>
@@ -394,8 +402,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   welcomeIconCircle: {
-    width: 32,
-    height: 32,
+    width: 48,
+    height: 48,
     borderRadius: 16,
     backgroundColor: colors.buttonPrimary,
     alignItems: 'center',
