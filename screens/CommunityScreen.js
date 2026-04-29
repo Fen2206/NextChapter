@@ -2,8 +2,9 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Modal,
@@ -434,6 +435,65 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
   const [isPublic, setIsPublic] = useState(true);
   const [loading, setLoading] = useState(false);
 
+  // Book selection state
+  const [selectedBook, setSelectedBook] = useState(null);
+  const [showBookSearch, setShowBookSearch] = useState(false);
+  const [bookQuery, setBookQuery] = useState('');
+  const [bookResults, setBookResults] = useState([]);
+  const [bookSearching, setBookSearching] = useState(false);
+
+  // Reset when the modal opens
+  useEffect(() => {
+    if (visible) {
+      setClubName('');
+      setDescription('');
+      setIsPublic(true);
+      setSelectedBook(null);
+      setShowBookSearch(false);
+      setBookQuery('');
+      setBookResults([]);
+    }
+  }, [visible]);
+
+  const handleBookSearch = async () => {
+    if (!bookQuery.trim()) return;
+    try {
+      setBookSearching(true);
+      setBookResults([]);
+      const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY;
+      const url =
+        'https://www.googleapis.com/books/v1/volumes?q=' +
+        encodeURIComponent(`intitle:${bookQuery.trim()}`) +
+        '&printType=books&maxResults=8&orderBy=relevance' +
+        (API_KEY ? `&key=${encodeURIComponent(API_KEY)}` : '');
+      const res = await fetch(url);
+      const data = await res.json();
+      setBookResults((data.items || []).map(item => {
+        const info = item.volumeInfo || {};
+        return {
+          googleId: item.id,
+          title: info.title || 'Untitled',
+          author: Array.isArray(info.authors) ? info.authors[0] : 'Unknown',
+          cover: info.imageLinks?.thumbnail
+            ? info.imageLinks.thumbnail.replace('http://', 'https://')
+            : null,
+          pageCount: info.pageCount || null,
+        };
+      }));
+    } catch (err) {
+      Alert.alert('Error', 'Failed to search books.');
+    } finally {
+      setBookSearching(false);
+    }
+  };
+
+  const handleSelectBook = (book) => {
+    setSelectedBook(book);
+    setShowBookSearch(false);
+    setBookQuery('');
+    setBookResults([]);
+  };
+
   const handleCreate = async () => {
     if (!clubName.trim()) {
       Alert.alert('Error', 'Please enter a club name');
@@ -448,6 +508,26 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
         return;
       }
 
+      let bookId = null;
+      if (selectedBook) {
+        const { data: bookRow, error: bookErr } = await supabase
+          .from('books')
+          .upsert(
+            {
+              google_volume_id: selectedBook.googleId,
+              title: selectedBook.title,
+              authors: selectedBook.author ? [selectedBook.author] : null,
+              cover_url: selectedBook.cover,
+              page_count: selectedBook.pageCount,
+            },
+            { onConflict: 'google_volume_id' }
+          )
+          .select('id')
+          .single();
+        if (bookErr) throw bookErr;
+        bookId = bookRow.id;
+      }
+
       const { data: clubData, error: clubError } = await supabase
         .from('clubs')
         .insert({
@@ -455,6 +535,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
           description: description.trim() || null,
           is_public: isPublic,
           owner_id: user.id,
+          book_id: bookId,
         })
         .select()
         .single();
@@ -468,9 +549,6 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
       if (memberError) throw memberError;
 
       Alert.alert('Success!', `${clubName} has been created!\n\nYou can now invite members and start discussions.`);
-      setClubName('');
-      setDescription('');
-      setIsPublic(true);
       onClose();
       onSuccess();
     } catch (error) {
@@ -544,6 +622,88 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                   <Text style={styles.privacyOptionText}>Private - Invite only</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+
+            {/* Book selection */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Starting Book (optional)</Text>
+
+              {selectedBook ? (
+                <View style={styles.selectedBookRow}>
+                  {selectedBook.cover ? (
+                    <Image source={{ uri: selectedBook.cover }} style={styles.selectedBookCover} />
+                  ) : (
+                    <View style={[styles.selectedBookCover, styles.bookCoverPlaceholder]}>
+                      <Ionicons name="book" size={16} color={colors.secondary} />
+                    </View>
+                  )}
+                  <View style={styles.selectedBookInfo}>
+                    <Text style={styles.selectedBookTitle} numberOfLines={1}>{selectedBook.title}</Text>
+                    <Text style={styles.selectedBookAuthor} numberOfLines={1}>by {selectedBook.author}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setSelectedBook(null)} style={styles.removeBookBtn}>
+                    <Ionicons name="close-circle" size={20} color={colors.secondary} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.addBookButton}
+                  onPress={() => setShowBookSearch(!showBookSearch)}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={colors.buttonPrimary} />
+                  <Text style={styles.addBookButtonText}>
+                    {showBookSearch ? 'Hide search' : 'Attach a starting book'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {showBookSearch && !selectedBook && (
+                <View style={styles.inlineBookSearch}>
+                  <View style={styles.bookSearchRow}>
+                    <TextInput
+                      style={styles.bookSearchInput}
+                      placeholder="Search for a book..."
+                      placeholderTextColor={colors.secondary}
+                      value={bookQuery}
+                      onChangeText={setBookQuery}
+                      onSubmitEditing={handleBookSearch}
+                      returnKeyType="search"
+                    />
+                    <TouchableOpacity
+                      style={[styles.bookSearchBtn, !bookQuery.trim() && styles.bookSearchBtnDisabled]}
+                      onPress={handleBookSearch}
+                      disabled={!bookQuery.trim() || bookSearching}
+                    >
+                      {bookSearching
+                        ? <ActivityIndicator size="small" color={colors.buttonText} />
+                        : <Ionicons name="search" size={16} color={colors.buttonText} />
+                      }
+                    </TouchableOpacity>
+                  </View>
+
+                  {bookResults.map(book => (
+                    <TouchableOpacity
+                      key={book.googleId}
+                      style={styles.bookResultCard}
+                      onPress={() => handleSelectBook(book)}
+                      activeOpacity={0.8}
+                    >
+                      {book.cover ? (
+                        <Image source={{ uri: book.cover }} style={styles.bookResultCover} />
+                      ) : (
+                        <View style={[styles.bookResultCover, styles.bookCoverPlaceholder]}>
+                          <Ionicons name="book" size={20} color={colors.secondary} />
+                        </View>
+                      )}
+                      <View style={styles.bookResultInfo}>
+                        <Text style={styles.bookResultTitle} numberOfLines={2}>{book.title}</Text>
+                        <Text style={styles.bookResultAuthor} numberOfLines={1}>by {book.author}</Text>
+                      </View>
+                      <Ionicons name="checkmark-circle-outline" size={22} color={colors.buttonPrimary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
           </ScrollView>
 
@@ -643,4 +803,25 @@ const styles = StyleSheet.create({
   createButtonModal: { flex: 1, paddingVertical: spacing.md, borderRadius: 8, backgroundColor: colors.buttonPrimary, alignItems: 'center' },
   createButtonModalText: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.semibold, color: colors.buttonText },
   buttonDisabled: { backgroundColor: colors.border, opacity: 0.6 },
+
+  // Book search styles
+  selectedBookRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 8, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
+  selectedBookCover: { width: 36, height: 54, borderRadius: 4, backgroundColor: colors.background },
+  bookCoverPlaceholder: { justifyContent: 'center', alignItems: 'center' },
+  selectedBookInfo: { flex: 1 },
+  selectedBookTitle: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.primary },
+  selectedBookAuthor: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 2 },
+  removeBookBtn: { padding: spacing.xs },
+  addBookButton: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingVertical: spacing.sm },
+  addBookButtonText: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.medium, color: colors.buttonPrimary },
+  inlineBookSearch: { marginTop: spacing.sm, gap: spacing.sm },
+  bookSearchRow: { flexDirection: 'row', gap: spacing.sm },
+  bookSearchInput: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, fontSize: typography.fontSizes.base, color: colors.primary },
+  bookSearchBtn: { backgroundColor: colors.buttonPrimary, borderRadius: 8, paddingHorizontal: spacing.md, justifyContent: 'center', alignItems: 'center', minWidth: 44 },
+  bookSearchBtnDisabled: { backgroundColor: colors.border },
+  bookResultCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 10, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
+  bookResultCover: { width: 40, height: 60, borderRadius: 4, backgroundColor: colors.background },
+  bookResultInfo: { flex: 1 },
+  bookResultTitle: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.primary, marginBottom: 2 },
+  bookResultAuthor: { fontSize: typography.fontSizes.xs, color: colors.secondary },
 });

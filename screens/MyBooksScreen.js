@@ -247,7 +247,7 @@ export default function MyBooksScreen({ navigation }) {
           title: book?.title || '',
           author: authors,
           cover: normalizeCover(book?.cover_url),
-          currentPage: ub.current_page || 0,
+          currentPage: ub.current_page || 1,
           totalPages: book?.page_count || 0,
           pageCount: book?.page_count || 0,
           progress,
@@ -461,7 +461,14 @@ export default function MyBooksScreen({ navigation }) {
   const handleContinueReading = async (book) => {
     try {
       if (book.url) {
-        navigation.navigate('Reader', { book, url: book.url });
+        navigation.navigate('ReadingView', {
+        book: {
+          ...book,
+          currentPage: book.currentPage || 1,
+          pageCount: book.pageCount || book.totalPages || 0,
+        },
+        url: book.url,
+      });
         return;
       }
 
@@ -470,9 +477,9 @@ export default function MyBooksScreen({ navigation }) {
 
       if (m) {
         const id = m[1];
-        const candidate = `https://www.gutenberg.org/cache/epub/${id}/pg${id}.txt`;
+        const candidate = `https://www.gutenberg.org/ebooks/${id}.txt.utf-8`;
 
-        navigation.navigate('Reader', {
+        navigation.navigate('ReadingView', {
           book: {
             title: book.title,
             author: book.author,
@@ -480,6 +487,8 @@ export default function MyBooksScreen({ navigation }) {
             source: 'gutenberg',
             externalId: id,
             id,
+            currentPage: book.currentPage || 1,
+            pageCount: book.pageCount || book.totalPages || 0,
           },
           url: candidate,
         });
@@ -694,7 +703,12 @@ export default function MyBooksScreen({ navigation }) {
     ).length;
   };
 
-  const CurrentlyReadingCard = ({ book }) => (
+  const CurrentlyReadingCard = ({ book }) => {
+  const hasKnownTotal = Number(book.totalPages) > 0;
+  const safeCurrentPage = Number(book.currentPage) > 0 ? book.currentPage : 1;
+  const safeProgress = hasKnownTotal ? book.progress : 0;
+
+  return (
     <TouchableOpacity
       style={styles.currentCard}
       onPress={() => handleBookPress(book)}
@@ -714,30 +728,52 @@ export default function MyBooksScreen({ navigation }) {
             </Text>
             <Text style={styles.currentAuthor}>{book.author}</Text>
           </View>
-
-          <View style={styles.progressCircle}>
-            <Text style={styles.progressCircleText}>{book.progress}%</Text>
-          </View>
         </View>
 
         <View style={styles.progressSection}>
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: `${book.progress}%` }]} />
-            </View>
-          </View>
+          {hasKnownTotal ? (
+            <>
+              <View style={styles.progressBarContainer}>
+                <View style={styles.progressBar}>
+                  <View
+                    style={[styles.progressFill, { width: `${safeProgress}%` }]}
+                  />
+                </View>
+              </View>
 
-          <View style={styles.progressDetails}>
-            <View style={styles.progressDetailItem}>
-              <Ionicons name="bookmark-outline" size={14} color={colors.secondary} />
-              <Text style={styles.progressDetailText}>
-                Page {book.currentPage} of {book.totalPages}
-              </Text>
+              <View style={styles.progressDetails}>
+                <View style={styles.progressDetailItem}>
+                  <Ionicons
+                    name="bookmark-outline"
+                    size={14}
+                    color={colors.secondary}
+                  />
+                  <Text style={styles.progressDetailText}>
+                    Page {safeCurrentPage} of {book.totalPages}
+                  </Text>
+                </View>
+
+                
+              </View>
+            </>
+          ) : (
+            <View style={styles.progressDetails}>
+              <View style={styles.progressDetailItem}>
+                <Ionicons
+                  name="bookmark-outline"
+                  size={14}
+                  color={colors.secondary}
+                />
+                <Text style={styles.progressDetailText}>
+                  Page {safeCurrentPage}
+                </Text>
+              </View>
             </View>
-            <View style={styles.progressDetailItem}>
-              <Ionicons name="time-outline" size={14} color={colors.secondary} />
-              <Text style={styles.progressDetailText}>{book.lastRead}</Text>
-            </View>
+          )}
+
+          <View style={[styles.progressDetailItem, { marginTop: 6 }]}>
+            <Ionicons name="time-outline" size={14} color={colors.secondary} />
+            <Text style={styles.progressDetailText}>{book.lastRead}</Text>
           </View>
         </View>
 
@@ -755,6 +791,8 @@ export default function MyBooksScreen({ navigation }) {
       </View>
     </TouchableOpacity>
   );
+};
+
 
   const BookCard = ({ book, showDate, savedCard = false }) => (
     <TouchableOpacity
@@ -1367,20 +1405,8 @@ const styles = StyleSheet.create({
     color: colors.secondary,
   },
 
-  progressCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.buttonPrimary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressCircleText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.buttonText,
-  },
-
+  
+ 
   progressSection: {
     marginBottom: spacing.sm,
   },

@@ -169,6 +169,17 @@ export default function BookDetailsScreen({ route, navigation }) {
   const [friendEmails, setFriendEmails] = useState('');
   const [savingToShelf, setSavingToShelf] = useState(false);
 
+  const [ratingState, setRatingState] = useState({
+    loading: true,
+    saving: false,
+    userRating: 0,
+    appAverageRating: null,
+    appTotalRatings: 0,
+    sourceAverageRating:
+      typeof incomingBook?.rating === 'number' ? incomingBook.rating : null,
+    sourceTotalRatings: incomingBook?.ratingsCount ?? 0,
+  });
+
   const book = useMemo(() => {
     return {
       id: incomingBook?.id ?? null,
@@ -225,6 +236,58 @@ export default function BookDetailsScreen({ route, navigation }) {
     }
   };
 
+  const loadRatingState = async (internalBookId) => {
+    try {
+      setRatingState((prev) => ({ ...prev, loading: true }));
+
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+
+      const user = authData?.user;
+
+      const [{ data: aggregateRows, error: aggregateErr }, userRatingResult] =
+        await Promise.all([
+          supabase
+            .from('book_ratings')
+            .select('rating')
+            .eq('book_id', internalBookId),
+          user
+            ? supabase
+                .from('book_ratings')
+                .select('rating')
+                .eq('user_id', user.id)
+                .eq('book_id', internalBookId)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        ]);
+
+      if (aggregateErr) throw aggregateErr;
+      if (userRatingResult?.error) throw userRatingResult.error;
+
+      const ratings = aggregateRows || [];
+      const appTotalRatings = ratings.length;
+      const appAverageRating =
+        appTotalRatings > 0
+          ? ratings.reduce((sum, row) => sum + Number(row.rating || 0), 0) /
+            appTotalRatings
+          : null;
+
+      setRatingState({
+        loading: false,
+        saving: false,
+        userRating: userRatingResult?.data?.rating ?? 0,
+        appAverageRating,
+        appTotalRatings,
+        sourceAverageRating:
+          typeof incomingBook?.rating === 'number' ? incomingBook.rating : null,
+        sourceTotalRatings: incomingBook?.ratingsCount ?? 0,
+      });
+    } catch (e) {
+      console.log('Rating load error:', e?.message);
+      setRatingState((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -247,6 +310,16 @@ export default function BookDetailsScreen({ route, navigation }) {
               currentPage: 0,
               progress: 0,
             });
+            setRatingState((prev) => ({
+              ...prev,
+              loading: false,
+              userRating: 0,
+              appAverageRating: null,
+              appTotalRatings: 0,
+              sourceAverageRating:
+                typeof incomingBook?.rating === 'number' ? incomingBook.rating : null,
+              sourceTotalRatings: incomingBook?.ratingsCount ?? 0,
+            }));
           }
           return;
         }
@@ -270,6 +343,16 @@ export default function BookDetailsScreen({ route, navigation }) {
               currentPage: 0,
               progress: 0,
             });
+            setRatingState((prev) => ({
+              ...prev,
+              loading: false,
+              userRating: 0,
+              appAverageRating: null,
+              appTotalRatings: 0,
+              sourceAverageRating:
+                typeof incomingBook?.rating === 'number' ? incomingBook.rating : null,
+              sourceTotalRatings: incomingBook?.ratingsCount ?? 0,
+            }));
           }
           return;
         }
@@ -313,10 +396,13 @@ export default function BookDetailsScreen({ route, navigation }) {
             progress,
           });
         }
+
+        await loadRatingState(internalBookId);
       } catch (e) {
         console.log('Book state load error:', e?.message);
         if (mounted) {
           setLibraryState((prev) => ({ ...prev, loading: false }));
+          setRatingState((prev) => ({ ...prev, loading: false }));
         }
       }
     };
@@ -330,6 +416,68 @@ export default function BookDetailsScreen({ route, navigation }) {
       mounted = false;
     };
   }, [incomingBook, storageKey, book.pageCount]);
+
+  const saveUserRating = async (selectedRating) => {
+    try {
+      setRatingState((prev) => ({ ...prev, saving: true }));
+
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+
+      const user = authData?.user;
+      if (!user) {
+        Alert.alert('Not signed in', 'Please sign in to rate books.');
+        return;
+      }
+
+      let internalBookId = libraryState.internalBookId;
+      if (!internalBookId) {
+        const bookRow = await ensureBookRow();
+        internalBookId = bookRow.id;
+        setLibraryState((prev) => ({
+          ...prev,
+          internalBookId: bookRow.id,
+        }));
+      }
+
+      const { error } = await supabase
+        .from('book_ratings')
+        .upsert(
+          {
+            user_id: user.id,
+            book_id: internalBookId,
+            rating: selectedRating,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,book_id' }
+        );
+
+      if (error) throw error;
+
+      await loadRatingState(internalBookId);
+    } catch (e) {
+      Alert.alert('Rating failed', e?.message ?? 'Unknown error');
+    } finally {
+      setRatingState((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const renderInteractiveStars = () => {
+    return [1, 2, 3, 4, 5].map((star) => (
+      <TouchableOpacity
+        key={star}
+        onPress={() => saveUserRating(star)}
+        disabled={ratingState.saving}
+        style={styles.ratingStarButton}
+      >
+        <Ionicons
+          name={star <= ratingState.userRating ? 'star' : 'star-outline'}
+          size={24}
+          color="#FFD700"
+        />
+      </TouchableOpacity>
+    ));
+  };
 
   const getStatusInfo = () => {
     if (libraryState.readingStatus === 'reading') {
@@ -361,12 +509,21 @@ export default function BookDetailsScreen({ route, navigation }) {
 
   const statusInfo = getStatusInfo();
 
+  const hasImmediateAccess =
+    book.source === 'gutenberg'
+      ? !!book.textUrl
+      : !!pickPreviewUrl(book);
+
   const mainButtonLabel =
-    libraryState.readingStatus === 'reading'
-      ? 'Continue Reading'
-      : libraryState.readingStatus === 'completed'
-      ? 'Read Again'
-      : 'Begin Reading';
+    book.source === 'gutenberg'
+      ? libraryState.readingStatus === 'reading'
+        ? 'Continue Reading'
+        : 'Read Full Text'
+      : hasImmediateAccess
+      ? libraryState.readingStatus === 'reading'
+        ? 'Continue Preview'
+        : 'Read Preview'
+      : 'Find Preview';
 
   const mainButtonIcon =
     libraryState.readingStatus === 'reading' ? 'play' : 'book-outline';
@@ -448,58 +605,87 @@ export default function BookDetailsScreen({ route, navigation }) {
     return data;
   };
 
-  const handleOpenReading = async () => {
+  const resolveReadableTarget = async () => {
     if (book.source === 'gutenberg') {
-      if (!book.textUrl) {
-        Alert.alert('Not available', 'No text format for this book.');
-        return;
-      }
-
-      navigation.navigate('ReadingView', {
-        book: {
-          ...book,
-          source: 'gutenberg',
-          externalId: book.id,
-          currentPage: libraryState.currentPage || 1,
-        },
-        url: book.textUrl,
-      });
-      return;
+      if (!book.textUrl) return { type: 'none' };
+      return { type: 'reader', url: book.textUrl };
     }
 
     if (book.source === 'google') {
       const url = pickPreviewUrl(book);
-      if (!url) {
-        Alert.alert('No preview available');
-        return;
-      }
-      setPreviewUrl(url);
-      return;
+      if (!url) return { type: 'none' };
+      return { type: 'preview', url };
     }
 
     if (book.source === 'dataset') {
-      const url = await googlePreviewForDatasetBook({
+      const existingPreview = pickPreviewUrl(book);
+      if (existingPreview) {
+        return { type: 'preview', url: existingPreview };
+      }
+
+      const fallbackUrl = await googlePreviewForDatasetBook({
         title: book.title,
         author: book.author,
         isbn: book.isbn !== 'N/A' ? book.isbn : null,
       });
 
-      if (!url) {
-        Alert.alert('No preview', "Google Books doesn't have a preview for this title.");
-        return;
+      if (fallbackUrl) {
+        return { type: 'preview', url: fallbackUrl };
       }
 
-      setPreviewUrl(url);
-      return;
+      return { type: 'none' };
     }
 
-    Alert.alert('Unavailable', 'This book cannot be opened yet.');
+    return { type: 'none' };
+  };
+
+  const openReadableTarget = (target, pageToUse) => {
+    if (target.type === 'reader') {
+      navigation.navigate('ReadingView', {
+        book: {
+          ...book,
+          source: 'gutenberg',
+          externalId: book.id,
+          currentPage: pageToUse,
+        },
+        url: target.url,
+      });
+      return true;
+    }
+
+    if (target.type === 'preview') {
+      setPreviewUrl(target.url);
+      return true;
+    }
+
+    return false;
   };
 
   const handleBeginOrContinueReading = async () => {
     try {
-      const { data: authData } = await supabase.auth.getUser();
+      const pageToUse =
+        libraryState.readingStatus === 'reading' && libraryState.currentPage > 0
+          ? libraryState.currentPage
+          : 1;
+
+      const target = await resolveReadableTarget();
+
+      if (target.type === 'none') {
+        Alert.alert(
+          'Preview unavailable',
+          'This book does not have a readable preview yet.'
+        );
+        return;
+      }
+
+      const opened = openReadableTarget(target, pageToUse);
+      if (!opened) return;
+
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+
       const user = authData?.user;
+      if (!user) return;
 
       let internalBookId = libraryState.internalBookId;
       if (!internalBookId) {
@@ -507,31 +693,24 @@ export default function BookDetailsScreen({ route, navigation }) {
         internalBookId = createdBook.id;
       }
 
-      const pageToUse =
-        libraryState.readingStatus === 'reading' && libraryState.currentPage > 0
-          ? libraryState.currentPage
-          : 1;
+      const userBook = await upsertUserBookReading(internalBookId, pageToUse);
 
-      if (user) {
-        const userBook = await upsertUserBookReading(internalBookId, pageToUse);
-
-        setLibraryState((prev) => ({
-          ...prev,
-          internalBookId,
-          userBookId: userBook?.id ?? prev.userBookId,
-          readingStatus: 'reading',
-          currentPage: userBook?.current_page ?? pageToUse,
-          progress:
-            book.pageCount > 0
-              ? Math.min(
-                  100,
-                  Math.round(((userBook?.current_page ?? pageToUse) / book.pageCount) * 100)
+      setLibraryState((prev) => ({
+        ...prev,
+        internalBookId,
+        userBookId: userBook?.id ?? prev.userBookId,
+        readingStatus: 'reading',
+        currentPage: userBook?.current_page ?? pageToUse,
+        progress:
+          book.pageCount > 0
+            ? Math.min(
+                100,
+                Math.round(
+                  ((userBook?.current_page ?? pageToUse) / book.pageCount) * 100
                 )
-              : prev.progress,
-        }));
-      }
-
-      await handleOpenReading();
+              )
+            : prev.progress,
+      }));
     } catch (e) {
       Alert.alert('Open failed', e?.message ?? 'Unknown error');
     }
@@ -726,7 +905,7 @@ export default function BookDetailsScreen({ route, navigation }) {
   };
 
   const handleJoinBookClub = () => {
-    navigation.navigate('Community');
+    navigation.getParent()?.navigate('Community');
   };
 
   if (!incomingBook) {
@@ -749,6 +928,22 @@ export default function BookDetailsScreen({ route, navigation }) {
   return (
     <>
       <ScrollView style={styles.container}>
+        <View style={styles.topBackRow}>
+          <TouchableOpacity
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('SearchMain');
+              }
+            }}
+            style={styles.topBackButton}
+          >
+            <Ionicons name="chevron-back" size={22} color={colors.primary} />
+            <Text style={styles.topBackText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.content}>
           <View style={styles.headerSection}>
             <View style={styles.coverContainer}>
@@ -787,17 +982,51 @@ export default function BookDetailsScreen({ route, navigation }) {
               )}
 
               <View style={styles.ratingContainer}>
-                {typeof book.rating === 'number' ? (
-                  <>
-                    <View style={styles.stars}>{renderStars(book.rating)}</View>
-                    <Text style={styles.ratingText}>
-                      {book.rating.toFixed(2)} (
-                      {(book.totalRatings || 0).toLocaleString()} ratings)
-                    </Text>
-                  </>
-                ) : (
-                  <Text style={styles.ratingText}>No rating available</Text>
-                )}
+                <View style={styles.ratingBlock}>
+                  <Text style={styles.ratingLabel}>Book Rating</Text>
+                  {typeof ratingState.sourceAverageRating === 'number' ? (
+                    <>
+                      <View style={styles.stars}>
+                        {renderStars(ratingState.sourceAverageRating)}
+                      </View>
+                      <Text style={styles.ratingText}>
+                        {ratingState.sourceAverageRating.toFixed(2)} (
+                        {(ratingState.sourceTotalRatings || 0).toLocaleString()} ratings)
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={styles.ratingText}>No source rating available</Text>
+                  )}
+                </View>
+
+                <View style={styles.ratingBlock}>
+                  <Text style={styles.ratingLabel}>Our Users&apos; Rating</Text>
+                  {ratingState.loading ? (
+                    <ActivityIndicator size="small" color={colors.buttonPrimary} />
+                  ) : typeof ratingState.appAverageRating === 'number' ? (
+                    <>
+                      <View style={styles.stars}>
+                        {renderStars(ratingState.appAverageRating)}
+                      </View>
+                      <Text style={styles.ratingText}>
+                        {ratingState.appAverageRating.toFixed(2)} (
+                        {(ratingState.appTotalRatings || 0).toLocaleString()} ratings)
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={styles.ratingText}>No user ratings yet</Text>
+                  )}
+                </View>
+
+                <View style={styles.userRatingBlock}>
+                  <Text style={styles.userRatingLabel}>Your Rating</Text>
+                  <View style={styles.userStarsRow}>{renderInteractiveStars()}</View>
+                  <Text style={styles.userRatingHint}>
+                    {ratingState.userRating > 0
+                      ? `You rated this ${ratingState.userRating}/5. Tap a star to change it.`
+                      : 'Tap a star to rate this book.'}
+                  </Text>
+                </View>
               </View>
 
               <View style={styles.infoRow}>
@@ -850,7 +1079,7 @@ export default function BookDetailsScreen({ route, navigation }) {
             </View>
           )}
 
-          <View style={styles.actionButtons}>
+          <View style={styles.actionButtonsBlock}>
             <TouchableOpacity
               style={styles.primaryButton}
               onPress={handleBeginOrContinueReading}
@@ -1093,6 +1322,30 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.lg,
+    paddingTop: 0,
+  },
+
+  topBackRow: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  topBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  topBackText: {
+    marginLeft: spacing.xs,
+    color: colors.primary,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
   },
 
   errorStateTitle: {
@@ -1178,6 +1431,15 @@ const styles = StyleSheet.create({
   ratingContainer: {
     marginBottom: spacing.md,
   },
+  ratingBlock: {
+    marginBottom: spacing.md,
+  },
+  ratingLabel: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.primary,
+    fontWeight: typography.fontWeights.semibold,
+    marginBottom: spacing.xs,
+  },
   stars: {
     flexDirection: 'row',
     marginBottom: spacing.xs,
@@ -1185,6 +1447,28 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: typography.fontSizes.sm,
     color: colors.secondary,
+  },
+  userRatingBlock: {
+    marginTop: spacing.xs,
+  },
+  userRatingLabel: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.primary,
+    fontWeight: typography.fontWeights.semibold,
+    marginBottom: spacing.xs,
+  },
+  userStarsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingStarButton: {
+    marginRight: spacing.xs,
+    paddingVertical: 2,
+  },
+  userRatingHint: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.secondary,
+    marginTop: spacing.xs,
   },
 
   infoRow: {
@@ -1247,7 +1531,7 @@ const styles = StyleSheet.create({
     color: colors.secondary,
   },
 
-  actionButtons: {
+  actionButtonsBlock: {
     marginBottom: spacing.xl,
   },
   primaryButton: {

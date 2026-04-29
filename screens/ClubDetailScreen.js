@@ -11,7 +11,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  FlatList,
   Image,
   Modal,
   RefreshControl,
@@ -36,6 +38,9 @@ export default function ClubDetailScreen({ route, navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [showNewThreadModal, setShowNewThreadModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showBookPickerModal, setShowBookPickerModal] = useState(false);
+  const [showPollModal, setShowPollModal] = useState(false);
+  const [activePoll, setActivePoll] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
 
   useFocusEffect(
@@ -49,7 +54,7 @@ export default function ClubDetailScreen({ route, navigation }) {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUserId(user?.id ?? null);
-      await Promise.all([fetchClubDetails(), fetchThreads(), fetchMembers()]);
+      await Promise.all([fetchClubDetails(), fetchThreads(), fetchMembers(), fetchActivePoll()]);
     } finally {
       setLoading(false);
     }
@@ -95,8 +100,9 @@ export default function ClubDetailScreen({ route, navigation }) {
       // Get the threads for the book clubs
       const { data: threadData, error } = await supabase
         .from('threads')
-        .select('id, chapter, title, created_by, created_at')
+        .select('id, chapter, title, created_by, created_at, is_pinned, tag')
         .eq('club_id', club.id)
+        .order('is_pinned', { ascending: false })  // pinned threads will always be first
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -142,6 +148,8 @@ export default function ClubDetailScreen({ route, navigation }) {
           replyCount: commentCounts[t.id] ?? 0,
           createdAt: t.created_at,
           lastActivity: formatRelativeTime(t.created_at),
+          isPinned: t.is_pinned ?? false,
+          tag: t.tag ?? null,
         };
       });
 
@@ -196,6 +204,72 @@ export default function ClubDetailScreen({ route, navigation }) {
     }
   };
 
+  const fetchActivePoll = async () => {
+    try {
+      const { data: pollData, error } = await supabase
+        .from('polls')
+        .select('id, question, is_active, ends_at, created_by, created_at')
+        .eq('club_id', club.id)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!pollData) { setActivePoll(null); return; }
+
+      // Get options with book details
+      const { data: optionsData } = await supabase
+        .from('poll_options')
+        .select('id, book_id')
+        .eq('poll_id', pollData.id);
+
+      const optionsWithBooks = [];
+      for (const opt of optionsData || []) {
+        const { data: bookData } = await supabase
+          .from('books')
+          .select('id, title, cover_url, authors')
+          .eq('id', opt.book_id)
+          .maybeSingle();
+        optionsWithBooks.push({
+          id: opt.id,
+          bookId: opt.book_id,
+          title: bookData?.title || 'Unknown',
+          cover: bookData?.cover_url || null,
+          author: Array.isArray(bookData?.authors) ? bookData.authors[0] : bookData?.authors || '',
+        });
+      }
+
+      // Get the votes for the poll
+      const { data: votesData } = await supabase
+        .from('poll_votes')
+        .select('option_id, user_id')
+        .eq('poll_id', pollData.id);
+
+      // Count the votes for each option
+      const voteCounts = {};
+      const userVote = votesData?.find(v => v.user_id === currentUserId)?.option_id ?? null;
+      (votesData || []).forEach(v => {
+        voteCounts[v.option_id] = (voteCounts[v.option_id] || 0) + 1;
+      });
+
+      setActivePoll({
+        id: pollData.id,
+        question: pollData.question,
+        isActive: pollData.is_active,
+        endsAt: pollData.ends_at,
+        createdBy: pollData.created_by,
+        options: optionsWithBooks,
+        voteCounts,
+        userVote,
+        totalVotes: (votesData || []).length,
+      });
+    } catch (error) {
+      console.error('Error fetching poll:', error);
+      setActivePoll(null);
+    }
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadAll();
@@ -222,21 +296,51 @@ export default function ClubDetailScreen({ route, navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await supabase.from('club_memberships').delete().eq('club_id', club.id);
-              const { data: threadIds } = await supabase
-                .from('threads').select('id').eq('club_id', club.id);
-              if (threadIds && threadIds.length > 0) {
-                const ids = threadIds.map(t => t.id);
-                await supabase.from('thread_comments').delete().in('thread_id', ids);
-                await supabase.from('threads').delete().eq('club_id', club.id);
+              // Delete thread comments first
+              const { data: threadData } = await supabase
+                .from('threads')
+                .select('id')
+                .eq('club_id', club.id);
+
+              if (threadData && threadData.length > 0) {
+                const ids = threadData.map(t => t.id);
+                const { error: commentErr } = await supabase
+                  .from('thread_comments').delete().in('thread_id', ids);
+                if (commentErr) console.warn('Comment delete error:', commentErr);
+
+                const { error: threadErr } = await supabase
+                  .from('threads').delete().eq('club_id', club.id);
+                if (threadErr) console.warn('Thread delete error:', threadErr);
               }
-              const { error } = await supabase.from('clubs').delete().eq('id', club.id);
-              if (error) throw error;
-              Alert.alert('Deleted', `"${clubDetails?.name}" has been deleted.`, [
-                { text: 'OK', onPress: () => navigation.navigate('Community') }
-              ]);
+
+              // Delete memberships
+              const { error: memberErr } = await supabase
+                .from('club_memberships').delete().eq('club_id', club.id);
+              if (memberErr) console.warn('Membership delete error:', memberErr);
+
+              // Delete the club
+              const { error: clubErr } = await supabase
+                .from('clubs').delete().eq('id', club.id);
+
+              if (clubErr) {
+                console.error('Club delete error:', JSON.stringify(clubErr));
+                if (clubErr.code === '42501' || clubErr.message?.includes('policy')) {
+                  Alert.alert(
+                    'Permission Error',
+                    'You need a DELETE policy on the clubs table in Supabase. Go to Authentication → Policies → clubs and add a DELETE policy for owners.'
+                  );
+                } else {
+                  Alert.alert('Error', `Failed to delete club: ${clubErr.message}`);
+                }
+                return;
+              }
+
+              navigation.navigate('CommunityMain');
+              setTimeout(() => {
+                Alert.alert('Deleted', `"${clubDetails?.name}" has been deleted.`);
+              }, 300);
             } catch (error) {
-              console.error('Error deleting club:', error);
+              console.error('Error deleting club:', JSON.stringify(error));
               Alert.alert('Error', 'Failed to delete club. Please try again.');
             }
           },
@@ -264,7 +368,7 @@ export default function ClubDetailScreen({ route, navigation }) {
                 .eq('user_id', currentUserId);
               if (error) throw error;
               Alert.alert('Left Club', `You have left "${clubDetails?.name}".`, [
-                { text: 'OK', onPress: () => navigation.navigate('Community') }
+                { text: 'OK', onPress: () => navigation.navigate('CommunityMain') }
               ]);
             } catch (error) {
               console.error('Error leaving club:', error);
@@ -277,17 +381,35 @@ export default function ClubDetailScreen({ route, navigation }) {
   };
 
   // Options menu
+  // Pin / unpin the thread
+  const handlePinThread = async (thread) => {
+    try {
+      const newPinned = !thread.isPinned;
+      const { error } = await supabase
+        .from('threads')
+        .update({ is_pinned: newPinned })
+        .eq('id', thread.id);
+      if (error) throw error;
+      fetchThreads();
+    } catch (error) {
+      console.error('Error pinning thread:', error);
+      Alert.alert('Error', 'Failed to update thread. Please try again.');
+    }
+  };
+
   const handleOptionsPress = () => {
     const isOwner = clubDetails?.owner_id === currentUserId;
     if (isOwner) {
       Alert.alert('Club Options', null, [
         { text: 'Edit Club', onPress: () => setShowEditModal(true) },
+        { text: 'Set Current Book', onPress: () => setShowBookPickerModal(true) },
+        { text: 'Book of the Month Poll', onPress: () => setShowPollModal(true) },
         { text: 'Delete Club', style: 'destructive', onPress: handleDeleteClub },
         { text: 'Cancel', style: 'cancel' },
       ]);
     } else {
       Alert.alert('Club Options', null, [
-        { text: '🚪  Leave Club', style: 'destructive', onPress: handleLeaveClub },
+        { text: 'Leave Club', style: 'destructive', onPress: handleLeaveClub },
         { text: 'Cancel', style: 'cancel' },
       ]);
     }
@@ -384,6 +506,48 @@ export default function ClubDetailScreen({ route, navigation }) {
       >
         {selectedTab === 'discussions' ? (
           <View style={styles.content}>
+            {/* Active Poll Card */}
+            {activePoll && (
+              <PollCard
+                poll={activePoll}
+                currentUserId={currentUserId}
+                isOwner={isOwner}
+                onVote={async (optionId) => {
+                  try {
+                    if (activePoll.userVote) {
+                      // Change vote, delete the old one and then insert the new one
+                      await supabase
+                        .from('poll_votes')
+                        .delete()
+                        .eq('poll_id', activePoll.id)
+                        .eq('user_id', currentUserId);
+                    }
+                    await supabase
+                      .from('poll_votes')
+                      .insert({ poll_id: activePoll.id, user_id: currentUserId, option_id: optionId });
+                    fetchActivePoll();
+                  } catch (err) {
+                    console.error('Vote error:', err);
+                    Alert.alert('Error', 'Failed to cast vote.');
+                  }
+                }}
+                onClose={async () => {
+                  try {
+                    const winner = activePoll.options.reduce((a, b) =>
+                      (activePoll.voteCounts[a.id] || 0) >= (activePoll.voteCounts[b.id] || 0) ? a : b
+                    );
+                    await supabase.from('polls').update({ is_active: false }).eq('id', activePoll.id);
+                    await supabase.from('clubs').update({ book_id: winner.bookId }).eq('id', club.id);
+                    Alert.alert('Poll Closed!', `"${winner.title}" has been set as the club's next book! 🎉`);
+                    loadAll();
+                  } catch (err) {
+                    console.error('Close poll error:', err);
+                    Alert.alert('Error', 'Failed to close poll.');
+                  }
+                }}
+              />
+            )}
+
             <TouchableOpacity style={styles.newThreadButton} onPress={handleNewThread}>
               <Ionicons name="add-circle" size={20} color={colors.buttonPrimary} />
               <Text style={styles.newThreadButtonText}>Start New Discussion</Text>
@@ -397,6 +561,8 @@ export default function ClubDetailScreen({ route, navigation }) {
                   key={thread.id}
                   thread={thread}
                   onPress={() => handleThreadPress(thread)}
+                  isOwner={isOwner}
+                  onPin={handlePinThread}
                 />
               ))
             ) : (
@@ -450,20 +616,87 @@ export default function ClubDetailScreen({ route, navigation }) {
           loadAll();
         }}
       />
+
+      {/* Book Picker Modal */}
+      <BookPickerModal
+        visible={showBookPickerModal}
+        clubId={club.id}
+        onClose={() => setShowBookPickerModal(false)}
+        onSuccess={() => {
+          setShowBookPickerModal(false);
+          loadAll();
+        }}
+      />
+
+      {/* Poll Creation Modal */}
+      <CreatePollModal
+        visible={showPollModal}
+        clubId={club.id}
+        onClose={() => setShowPollModal(false)}
+        onSuccess={() => {
+          setShowPollModal(false);
+          fetchActivePoll();
+        }}
+      />
     </View>
   );
 }
 
-// Thread Card 
+// Thread Card
+const TAG_COLORS = {
+  'Spoilers':    { bg: '#FFEBEE', text: '#C62828', border: '#EF9A9A' },
+  'Question':    { bg: '#E3F2FD', text: '#1565C0', border: '#90CAF9' },
+  'Review':      { bg: '#F3E5F5', text: '#6A1B9A', border: '#CE93D8' },
+  'Discussion':  { bg: '#E8F5E9', text: '#2E7D32', border: '#A5D6A7' },
+  'Announcement':{ bg: '#FFF8E1', text: '#F57F17', border: '#FFE082' },
+};
 
-function ThreadCard({ thread, onPress }) {
+function ThreadCard({ thread, onPress, isOwner, onPin }) {
+  const tagStyle = thread.tag ? TAG_COLORS[thread.tag] : null;
+
   return (
-    <TouchableOpacity style={styles.threadCard} onPress={onPress} activeOpacity={0.8}>
-      <View style={styles.threadHeader}>
-        <View style={styles.chapterBadge}>
-          <Text style={styles.chapterText}>{thread.chapter}</Text>
+    <View style={[styles.threadCard, thread.isPinned && styles.threadCardPinned]}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.8}
+        style={styles.threadCardInner}
+      >
+      {/* Pinned banner */}
+      {thread.isPinned && (
+        <View style={styles.pinnedBanner}>
+          <Ionicons name="pin" size={12} color="#F57F17" />
+          <Text style={styles.pinnedBannerText}>Pinned</Text>
         </View>
-        <Text style={styles.threadTime}>{thread.lastActivity}</Text>
+      )}
+
+      <View style={styles.threadHeader}>
+        <View style={styles.threadBadges}>
+          <View style={styles.chapterBadge}>
+            <Text style={styles.chapterText}>{thread.chapter}</Text>
+          </View>
+          {thread.tag && tagStyle && (
+            <View style={[styles.tagBadge, { backgroundColor: tagStyle.bg, borderColor: tagStyle.border }]}>
+              <Text style={[styles.tagBadgeText, { color: tagStyle.text }]}>{thread.tag}</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.threadHeaderRight}>
+          <Text style={styles.threadTime}>{thread.lastActivity}</Text>
+          {isOwner && (
+            <TouchableOpacity
+              onPress={() => onPin(thread)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.pinButton}
+            >
+              <Ionicons
+                name={thread.isPinned ? 'pin' : 'pin-outline'}
+                size={16}
+                color={thread.isPinned ? '#F57F17' : colors.secondary}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <Text style={styles.threadTitle}>{thread.title}</Text>
@@ -480,7 +713,8 @@ function ThreadCard({ thread, onPress }) {
           </Text>
         </View>
       </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -520,15 +754,191 @@ function EmptyState({ icon, title, message }) {
   );
 }
 
-// Edit Club Modal
+// Book Picker Modal
+const GOOGLE_BOOKS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY;
 
+function BookPickerModal({ visible, clubId, onClose, onSuccess }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Reset when the modal opens
+  useEffect(() => {
+    if (visible) {
+      setQuery('');
+      setResults([]);
+    }
+  }, [visible]);
+
+  const handleSearch = async () => {
+    if (!query.trim()) return;
+    try {
+      setSearching(true);
+      setResults([]);
+
+      const url =
+        'https://www.googleapis.com/books/v1/volumes?q=' +
+        encodeURIComponent(`intitle:${query.trim()}`) +
+        '&printType=books&maxResults=10&orderBy=relevance' +
+        (GOOGLE_BOOKS_API_KEY ? `&key=${encodeURIComponent(GOOGLE_BOOKS_API_KEY)}` : '');
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      const books = (data.items || []).map(item => {
+        const info = item.volumeInfo || {};
+        return {
+          googleId: item.id,
+          title: info.title || 'Untitled',
+          author: Array.isArray(info.authors) ? info.authors[0] : 'Unknown author',
+          cover: info.imageLinks?.thumbnail
+            ? info.imageLinks.thumbnail.replace('http://', 'https://')
+            : null,
+          pageCount: info.pageCount || null,
+        };
+      });
+
+      setResults(books);
+    } catch (err) {
+      console.error('Book search error:', err);
+      Alert.alert('Error', 'Failed to search books. Please try again.');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSelectBook = async (book) => {
+    try {
+      setSaving(true);
+
+      const { data: bookRow, error: bookErr } = await supabase
+        .from('books')
+        .upsert(
+          {
+            google_volume_id: book.googleId,
+            title: book.title,
+            authors: book.author ? [book.author] : null,
+            cover_url: book.cover,
+            page_count: book.pageCount,
+          },
+          { onConflict: 'google_volume_id' }
+        )
+        .select('id')
+        .single();
+
+      if (bookErr) throw bookErr;
+
+      // Update's the club's book_id
+      const { error: clubErr } = await supabase
+        .from('clubs')
+        .update({ book_id: bookRow.id })
+        .eq('id', clubId);
+
+      if (clubErr) throw clubErr;
+
+      Alert.alert('Book Set!', `"${book.title}" is now the club's current book.`);
+      onSuccess();
+    } catch (err) {
+      console.error('Error setting book:', JSON.stringify(err));
+      Alert.alert('Error', 'Failed to set book. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.bookPickerContainer}>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Set Current Book</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Search Bar */}
+          <View style={styles.bookSearchRow}>
+            <TextInput
+              style={styles.bookSearchInput}
+              placeholder="Search for a book..."
+              placeholderTextColor={colors.secondary}
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
+            />
+            <TouchableOpacity
+              style={[styles.bookSearchBtn, !query.trim() && styles.buttonDisabled]}
+              onPress={handleSearch}
+              disabled={!query.trim() || searching}
+            >
+              {searching
+                ? <ActivityIndicator size="small" color={colors.buttonText} />
+                : <Ionicons name="search" size={18} color={colors.buttonText} />
+              }
+            </TouchableOpacity>
+          </View>
+
+          {/* Results */}
+          {saving ? (
+            <View style={styles.bookPickerLoading}>
+              <ActivityIndicator size="large" color={colors.buttonPrimary} />
+              <Text style={styles.bookPickerLoadingText}>Saving...</Text>
+            </View>
+          ) : results.length > 0 ? (
+            <FlatList
+              data={results}
+              keyExtractor={item => item.googleId}
+              contentContainerStyle={styles.bookResultsList}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.bookResultCard}
+                  onPress={() => handleSelectBook(item)}
+                  activeOpacity={0.8}
+                >
+                  {item.cover ? (
+                    <Image source={{ uri: item.cover }} style={styles.bookResultCover} />
+                  ) : (
+                    <View style={[styles.bookResultCover, styles.bookResultCoverPlaceholder]}>
+                      <Ionicons name="book" size={24} color={colors.secondary} />
+                    </View>
+                  )}
+                  <View style={styles.bookResultInfo}>
+                    <Text style={styles.bookResultTitle} numberOfLines={2}>{item.title}</Text>
+                    <Text style={styles.bookResultAuthor} numberOfLines={1}>by {item.author}</Text>
+                    {item.pageCount ? (
+                      <Text style={styles.bookResultPages}>{item.pageCount} pages</Text>
+                    ) : null}
+                  </View>
+                  <Ionicons name="checkmark-circle-outline" size={24} color={colors.buttonPrimary} />
+                </TouchableOpacity>
+              )}
+            />
+          ) : searching ? null : (
+            <View style={styles.bookPickerEmpty}>
+              <Ionicons name="search" size={48} color={colors.border} />
+              <Text style={styles.bookPickerEmptyText}>
+                Search for a book to set as{'\n'}the club's current read
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Edit Club Modal
 function EditClubModal({ visible, clubDetails, onClose, onSuccess }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // Pre-fill form
   useEffect(() => {
     if (visible && clubDetails) {
       setName(clubDetails.name || '');
@@ -657,6 +1067,67 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
   );
   const [loading, setLoading] = useState(false);
 
+  // Tag selection state
+  const [selectedTag, setSelectedTag] = useState(null);
+
+  // Book selection state
+  const [selectedBook, setSelectedBook] = useState(null);
+  const [showBookSearch, setShowBookSearch] = useState(false);
+  const [bookQuery, setBookQuery] = useState('');
+  const [bookResults, setBookResults] = useState([]);
+  const [bookSearching, setBookSearching] = useState(false);
+
+  // Reset when modal opens
+  useEffect(() => {
+    if (visible) {
+      setTitle('');
+      setChapter(currentChapter != null ? String(currentChapter) : '');
+      setSelectedTag(null);
+      setSelectedBook(null);
+      setShowBookSearch(false);
+      setBookQuery('');
+      setBookResults([]);
+    }
+  }, [visible]);
+
+  const handleBookSearch = async () => {
+    if (!bookQuery.trim()) return;
+    try {
+      setBookSearching(true);
+      setBookResults([]);
+      const url =
+        'https://www.googleapis.com/books/v1/volumes?q=' +
+        encodeURIComponent(`intitle:${bookQuery.trim()}`) +
+        '&printType=books&maxResults=8&orderBy=relevance' +
+        (GOOGLE_BOOKS_API_KEY ? `&key=${encodeURIComponent(GOOGLE_BOOKS_API_KEY)}` : '');
+      const res = await fetch(url);
+      const data = await res.json();
+      setBookResults((data.items || []).map(item => {
+        const info = item.volumeInfo || {};
+        return {
+          googleId: item.id,
+          title: info.title || 'Untitled',
+          author: Array.isArray(info.authors) ? info.authors[0] : 'Unknown',
+          cover: info.imageLinks?.thumbnail
+            ? info.imageLinks.thumbnail.replace('http://', 'https://')
+            : null,
+          pageCount: info.pageCount || null,
+        };
+      }));
+    } catch (err) {
+      Alert.alert('Error', 'Failed to search books.');
+    } finally {
+      setBookSearching(false);
+    }
+  };
+
+  const handleSelectBook = (book) => {
+    setSelectedBook(book);
+    setShowBookSearch(false);
+    setBookQuery('');
+    setBookResults([]);
+  };
+
   const handleCreate = async () => {
     if (!title.trim()) {
       Alert.alert('Missing title', 'Please enter a discussion title.');
@@ -674,6 +1145,26 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { Alert.alert('Not logged in'); return; }
 
+      let bookId = null;
+      if (selectedBook) {
+        const { data: bookRow, error: bookErr } = await supabase
+          .from('books')
+          .upsert(
+            {
+              google_volume_id: selectedBook.googleId,
+              title: selectedBook.title,
+              authors: selectedBook.author ? [selectedBook.author] : null,
+              cover_url: selectedBook.cover,
+              page_count: selectedBook.pageCount,
+            },
+            { onConflict: 'google_volume_id' }
+          )
+          .select('id')
+          .single();
+        if (bookErr) throw bookErr;
+        bookId = bookRow.id;
+      }
+
       const { error } = await supabase
         .from('threads')
         .insert({
@@ -681,12 +1172,12 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
           title: title.trim(),
           chapter: chapterNum,
           created_by: user.id,
+          book_id: bookId,
+          tag: selectedTag,
         });
 
       if (error) throw error;
 
-      setTitle('');
-      setChapter(currentChapter != null ? String(currentChapter) : '');
       onSuccess();
     } catch (error) {
       console.error('Error creating thread:', error);
@@ -733,6 +1224,117 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
                 Leave blank for a general discussion not tied to a chapter.
               </Text>
             </View>
+
+            {/* Tag selector */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Tag (optional)</Text>
+              <View style={styles.tagSelector}>
+                {['Spoilers', 'Question', 'Review', 'Discussion', 'Announcement'].map(t => {
+                  const tagStyle = TAG_COLORS[t];
+                  const isSelected = selectedTag === t;
+                  return (
+                    <TouchableOpacity
+                      key={t}
+                      style={[
+                        styles.tagOption,
+                        { borderColor: tagStyle.border },
+                        isSelected && { backgroundColor: tagStyle.bg },
+                      ]}
+                      onPress={() => setSelectedTag(isSelected ? null : t)}
+                    >
+                      <Text style={[styles.tagOptionText, { color: isSelected ? tagStyle.text : colors.secondary }]}>
+                        {t}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Book selection */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Book (optional)</Text>
+
+              {selectedBook ? (
+                // Show selected book with option to change/remove
+                <View style={styles.selectedBookRow}>
+                  {selectedBook.cover ? (
+                    <Image source={{ uri: selectedBook.cover }} style={styles.selectedBookCover} />
+                  ) : (
+                    <View style={[styles.selectedBookCover, styles.bookResultCoverPlaceholder]}>
+                      <Ionicons name="book" size={16} color={colors.secondary} />
+                    </View>
+                  )}
+                  <View style={styles.selectedBookInfo}>
+                    <Text style={styles.selectedBookTitle} numberOfLines={1}>{selectedBook.title}</Text>
+                    <Text style={styles.selectedBookAuthor} numberOfLines={1}>by {selectedBook.author}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setSelectedBook(null)} style={styles.removeBookBtn}>
+                    <Ionicons name="close-circle" size={20} color={colors.secondary} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                // Show search toggle button
+                <TouchableOpacity
+                  style={styles.addBookButton}
+                  onPress={() => setShowBookSearch(!showBookSearch)}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={colors.buttonPrimary} />
+                  <Text style={styles.addBookButtonText}>
+                    {showBookSearch ? 'Hide search' : 'Attach a book'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Inline book search */}
+              {showBookSearch && !selectedBook && (
+                <View style={styles.inlineBookSearch}>
+                  <View style={styles.bookSearchRow}>
+                    <TextInput
+                      style={styles.bookSearchInput}
+                      placeholder="Search for a book..."
+                      placeholderTextColor={colors.secondary}
+                      value={bookQuery}
+                      onChangeText={setBookQuery}
+                      onSubmitEditing={handleBookSearch}
+                      returnKeyType="search"
+                    />
+                    <TouchableOpacity
+                      style={[styles.bookSearchBtn, !bookQuery.trim() && styles.buttonDisabled]}
+                      onPress={handleBookSearch}
+                      disabled={!bookQuery.trim() || bookSearching}
+                    >
+                      {bookSearching
+                        ? <ActivityIndicator size="small" color={colors.buttonText} />
+                        : <Ionicons name="search" size={16} color={colors.buttonText} />
+                      }
+                    </TouchableOpacity>
+                  </View>
+
+                  {bookResults.map(book => (
+                    <TouchableOpacity
+                      key={book.googleId}
+                      style={styles.bookResultCard}
+                      onPress={() => handleSelectBook(book)}
+                      activeOpacity={0.8}
+                    >
+                      {book.cover ? (
+                        <Image source={{ uri: book.cover }} style={styles.bookResultCover} />
+                      ) : (
+                        <View style={[styles.bookResultCover, styles.bookResultCoverPlaceholder]}>
+                          <Ionicons name="book" size={20} color={colors.secondary} />
+                        </View>
+                      )}
+                      <View style={styles.bookResultInfo}>
+                        <Text style={styles.bookResultTitle} numberOfLines={2}>{book.title}</Text>
+                        <Text style={styles.bookResultAuthor} numberOfLines={1}>by {book.author}</Text>
+                      </View>
+                      <Ionicons name="checkmark-circle-outline" size={22} color={colors.buttonPrimary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
           </ScrollView>
 
           <View style={styles.modalActions}>
@@ -746,6 +1348,294 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
             >
               <Text style={styles.createButtonText}>
                 {loading ? 'Posting...' : 'Post Discussion'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Poll Card Component
+function PollCard({ poll, currentUserId, isOwner, onVote, onClose }) {
+  const totalVotes = poll.totalVotes;
+
+  return (
+    <View style={styles.pollCard}>
+      <View style={styles.pollHeader}>
+        <View style={styles.pollTitleRow}>
+          <Ionicons name="ballot" size={18} color={colors.buttonPrimary} />
+          <Text style={styles.pollTitle}>{poll.question}</Text>
+        </View>
+        {isOwner && (
+          <TouchableOpacity style={styles.pollCloseBtn} onPress={onClose}>
+            <Text style={styles.pollCloseBtnText}>Close & Set Winner</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <Text style={styles.pollSubtitle}>
+        {totalVotes} vote{totalVotes !== 1 ? 's' : ''} • {poll.userVote ? 'You voted' : 'Tap to vote'}
+      </Text>
+
+      {poll.options.map(option => {
+        const votes = poll.voteCounts[option.id] || 0;
+        const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+        const isSelected = poll.userVote === option.id;
+
+        return (
+          <TouchableOpacity
+            key={option.id}
+            style={[styles.pollOption, isSelected && styles.pollOptionSelected]}
+            onPress={() => onVote(option.id)}
+            activeOpacity={0.8}
+          >
+            {/* Progress bar background */}
+            <View style={[styles.pollOptionBar, { width: `${pct}%` }]} />
+
+            <View style={styles.pollOptionContent}>
+              {option.cover ? (
+                <Image source={{ uri: option.cover }} style={styles.pollOptionCover} />
+              ) : (
+                <View style={[styles.pollOptionCover, styles.pollOptionCoverPlaceholder]}>
+                  <Ionicons name="book" size={14} color={colors.secondary} />
+                </View>
+              )}
+              <View style={styles.pollOptionInfo}>
+                <Text style={styles.pollOptionTitle} numberOfLines={1}>{option.title}</Text>
+                <Text style={styles.pollOptionAuthor} numberOfLines={1}>by {option.author}</Text>
+              </View>
+              <View style={styles.pollOptionRight}>
+                {isSelected && (
+                  <Ionicons name="checkmark-circle" size={18} color={colors.buttonPrimary} />
+                )}
+                <Text style={styles.pollOptionPct}>{pct}%</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+// Create Poll Modal
+function CreatePollModal({ visible, clubId, onClose, onSuccess }) {
+  const [question, setQuestion] = useState('What should we read next?');
+  const [bookOptions, setBookOptions] = useState([]);
+  const [bookQuery, setBookQuery] = useState('');
+  const [bookResults, setBookResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const GOOGLE_BOOKS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_BOOKS_KEY;
+
+  useEffect(() => {
+    if (visible) {
+      setQuestion('What should we read next?');
+      setBookOptions([]);
+      setBookQuery('');
+      setBookResults([]);
+    }
+  }, [visible]);
+
+  const handleBookSearch = async () => {
+    if (!bookQuery.trim()) return;
+    try {
+      setSearching(true);
+      setBookResults([]);
+      const url =
+        'https://www.googleapis.com/books/v1/volumes?q=' +
+        encodeURIComponent(`intitle:${bookQuery.trim()}`) +
+        '&printType=books&maxResults=6&orderBy=relevance' +
+        (GOOGLE_BOOKS_API_KEY ? `&key=${encodeURIComponent(GOOGLE_BOOKS_API_KEY)}` : '');
+      const res = await fetch(url);
+      const data = await res.json();
+      setBookResults((data.items || []).map(item => {
+        const info = item.volumeInfo || {};
+        return {
+          googleId: item.id,
+          title: info.title || 'Untitled',
+          author: Array.isArray(info.authors) ? info.authors[0] : 'Unknown',
+          cover: info.imageLinks?.thumbnail?.replace('http://', 'https://') || null,
+          pageCount: info.pageCount || null,
+        };
+      }));
+    } catch (err) {
+      Alert.alert('Error', 'Failed to search books.');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleAddOption = (book) => {
+    if (bookOptions.find(b => b.googleId === book.googleId)) {
+      Alert.alert('Already added', 'This book is already in the poll.');
+      return;
+    }
+    if (bookOptions.length >= 5) {
+      Alert.alert('Max options', 'You can add up to 5 books per poll.');
+      return;
+    }
+    setBookOptions([...bookOptions, book]);
+    setBookQuery('');
+    setBookResults([]);
+  };
+
+  const handleRemoveOption = (googleId) => {
+    setBookOptions(bookOptions.filter(b => b.googleId !== googleId));
+  };
+
+  const handleCreate = async () => {
+    if (bookOptions.length < 2) {
+      Alert.alert('Not enough options', 'Please add at least 2 books to the poll.');
+      return;
+    }
+    try {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { Alert.alert('Not logged in'); return; }
+
+      // Create the poll
+      const { data: pollData, error: pollErr } = await supabase
+        .from('polls')
+        .insert({ club_id: clubId, question: question.trim(), created_by: user.id, is_active: true })
+        .select('id')
+        .single();
+      if (pollErr) throw pollErr;
+
+      // Create poll options
+      for (const book of bookOptions) {
+        const { data: bookRow, error: bookErr } = await supabase
+          .from('books')
+          .upsert(
+            { google_volume_id: book.googleId, title: book.title, authors: book.author ? [book.author] : null, cover_url: book.cover, page_count: book.pageCount },
+            { onConflict: 'google_volume_id' }
+          )
+          .select('id')
+          .single();
+        if (bookErr) throw bookErr;
+
+        const { error: optErr } = await supabase
+          .from('poll_options')
+          .insert({ poll_id: pollData.id, book_id: bookRow.id });
+        if (optErr) throw optErr;
+      }
+
+      Alert.alert('Poll Created!', 'Members can now vote on the next book! 🗳️');
+      onSuccess();
+    } catch (err) {
+      console.error('Create poll error:', err);
+      Alert.alert('Error', 'Failed to create poll. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.bookPickerContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Book of the Month Poll</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            {/* Question */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Poll Question</Text>
+              <TextInput
+                style={styles.input}
+                value={question}
+                onChangeText={setQuestion}
+                maxLength={100}
+              />
+            </View>
+
+            {/* Selected books */}
+            {bookOptions.length > 0 && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Options ({bookOptions.length}/5)</Text>
+                {bookOptions.map(book => (
+                  <View key={book.googleId} style={styles.pollBookOption}>
+                    {book.cover
+                      ? <Image source={{ uri: book.cover }} style={styles.pollBookOptionCover} />
+                      : <View style={[styles.pollBookOptionCover, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface }]}><Ionicons name="book" size={14} color={colors.secondary} /></View>
+                    }
+                    <View style={styles.pollBookOptionInfo}>
+                      <Text style={styles.pollBookOptionTitle} numberOfLines={1}>{book.title}</Text>
+                      <Text style={styles.pollBookOptionAuthor} numberOfLines={1}>by {book.author}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => handleRemoveOption(book.googleId)} style={styles.removeBookBtn}>
+                      <Ionicons name="close-circle" size={20} color={colors.secondary} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Book search */}
+            {bookOptions.length < 5 && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Add a Book</Text>
+                <View style={styles.bookSearchRow}>
+                  <TextInput
+                    style={styles.bookSearchInput}
+                    placeholder="Search for a book..."
+                    placeholderTextColor={colors.secondary}
+                    value={bookQuery}
+                    onChangeText={setBookQuery}
+                    onSubmitEditing={handleBookSearch}
+                    returnKeyType="search"
+                  />
+                  <TouchableOpacity
+                    style={[styles.bookSearchBtn, !bookQuery.trim() && styles.buttonDisabled]}
+                    onPress={handleBookSearch}
+                    disabled={!bookQuery.trim() || searching}
+                  >
+                    {searching
+                      ? <ActivityIndicator size="small" color={colors.buttonText} />
+                      : <Ionicons name="search" size={16} color={colors.buttonText} />
+                    }
+                  </TouchableOpacity>
+                </View>
+
+                {bookResults.map(book => (
+                  <TouchableOpacity
+                    key={book.googleId}
+                    style={styles.bookResultCard}
+                    onPress={() => handleAddOption(book)}
+                    activeOpacity={0.8}
+                  >
+                    {book.cover
+                      ? <Image source={{ uri: book.cover }} style={styles.bookResultCover} />
+                      : <View style={[styles.bookResultCover, styles.bookResultCoverPlaceholder]}><Ionicons name="book" size={20} color={colors.secondary} /></View>
+                    }
+                    <View style={styles.bookResultInfo}>
+                      <Text style={styles.bookResultTitle} numberOfLines={2}>{book.title}</Text>
+                      <Text style={styles.bookResultAuthor} numberOfLines={1}>by {book.author}</Text>
+                    </View>
+                    <Ionicons name="add-circle-outline" size={22} color={colors.buttonPrimary} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.createButton, (loading || bookOptions.length < 2) && styles.buttonDisabled]}
+              onPress={handleCreate}
+              disabled={loading || bookOptions.length < 2}
+            >
+              <Text style={styles.createButtonText}>
+                {loading ? 'Creating...' : `Create Poll (${bookOptions.length} books)`}
               </Text>
             </TouchableOpacity>
           </View>
@@ -857,4 +1747,74 @@ const styles = StyleSheet.create({
   createButton: { flex: 1, paddingVertical: spacing.md, borderRadius: 8, backgroundColor: colors.buttonPrimary, alignItems: 'center' },
   createButtonText: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.semibold, color: colors.buttonText },
   buttonDisabled: { opacity: 0.5 },
+
+  // Book Picker Modal
+  bookPickerContainer: { backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '85%' },
+  bookSearchRow: { flexDirection: 'row', gap: spacing.sm, padding: spacing.lg, paddingTop: 0 },
+  bookSearchInput: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, fontSize: typography.fontSizes.base, color: colors.primary },
+  bookSearchBtn: { backgroundColor: colors.buttonPrimary, borderRadius: 8, paddingHorizontal: spacing.md, justifyContent: 'center', alignItems: 'center', minWidth: 44 },
+  bookResultsList: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
+  bookResultCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 10, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: spacing.md },
+  bookResultCover: { width: 50, height: 75, borderRadius: 4, backgroundColor: colors.background },
+  bookResultCoverPlaceholder: { justifyContent: 'center', alignItems: 'center' },
+  bookResultInfo: { flex: 1 },
+  bookResultTitle: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.primary, marginBottom: 2 },
+  bookResultAuthor: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginBottom: 2 },
+  bookResultPages: { fontSize: typography.fontSizes.xs, color: colors.secondary },
+  bookPickerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
+  bookPickerLoadingText: { fontSize: typography.fontSizes.base, color: colors.secondary },
+  bookPickerEmpty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl, gap: spacing.md },
+
+  // Thread pin and tag styles
+  threadCardPinned: { borderColor: '#FFE082', borderWidth: 1.5, backgroundColor: '#FFFDF0' },
+  threadCardInner: { flex: 1 },
+  pinnedBanner: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: spacing.sm },
+  pinnedBannerText: { fontSize: typography.fontSizes.xs, fontWeight: typography.fontWeights.semibold, color: '#F57F17' },
+  threadBadges: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flex: 1 },
+  threadHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  tagBadge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: 10, borderWidth: 1 },
+  tagBadgeText: { fontSize: typography.fontSizes.xs, fontWeight: typography.fontWeights.semibold },
+  pinButton: { padding: 4 },
+  tagSelector: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  tagOption: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  tagOptionText: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.medium },
+
+  // Selected book in thread modal
+  selectedBookRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 8, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
+  selectedBookCover: { width: 36, height: 54, borderRadius: 4, backgroundColor: colors.background },
+  selectedBookInfo: { flex: 1 },
+  selectedBookTitle: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.primary },
+  selectedBookAuthor: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 2 },
+  removeBookBtn: { padding: spacing.xs },
+  addBookButton: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingVertical: spacing.sm },
+  addBookButtonText: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.medium, color: colors.buttonPrimary },
+  inlineBookSearch: { marginTop: spacing.sm, gap: spacing.sm },
+  bookPickerEmptyText: { fontSize: typography.fontSizes.base, color: colors.secondary, textAlign: 'center', lineHeight: typography.fontSizes.base * typography.lineHeights.relaxed },
+
+  // Poll Card
+  pollCard: { backgroundColor: colors.surface, borderRadius: 12, padding: spacing.md, marginBottom: spacing.lg, borderWidth: 1.5, borderColor: colors.buttonPrimary },
+  pollHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.xs },
+  pollTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flex: 1 },
+  pollTitle: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.bold, color: colors.primary, flex: 1 },
+  pollSubtitle: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginBottom: spacing.md },
+  pollCloseBtn: { backgroundColor: colors.buttonPrimary, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: 8 },
+  pollCloseBtnText: { fontSize: typography.fontSizes.xs, color: colors.buttonText, fontWeight: typography.fontWeights.semibold },
+  pollOption: { borderRadius: 10, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.sm, overflow: 'hidden', position: 'relative', minHeight: 56 },
+  pollOptionSelected: { borderColor: colors.buttonPrimary, borderWidth: 1.5 },
+  pollOptionBar: { position: 'absolute', top: 0, left: 0, bottom: 0, backgroundColor: '#E8F4FD', borderRadius: 10 },
+  pollOptionContent: { flexDirection: 'row', alignItems: 'center', padding: spacing.sm, gap: spacing.sm, position: 'relative' },
+  pollOptionCover: { width: 32, height: 48, borderRadius: 4, backgroundColor: colors.background },
+  pollOptionCoverPlaceholder: { justifyContent: 'center', alignItems: 'center' },
+  pollOptionInfo: { flex: 1 },
+  pollOptionTitle: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.primary },
+  pollOptionAuthor: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 1 },
+  pollOptionRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  pollOptionPct: { fontSize: typography.fontSizes.xs, fontWeight: typography.fontWeights.bold, color: colors.buttonPrimary, minWidth: 32, textAlign: 'right' },
+
+  // Poll book options
+  pollBookOption: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 8, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.sm, gap: spacing.sm },
+  pollBookOptionCover: { width: 32, height: 48, borderRadius: 4, backgroundColor: colors.background },
+  pollBookOptionInfo: { flex: 1 },
+  pollBookOptionTitle: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.primary },
+  pollBookOptionAuthor: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 1 },
 });
