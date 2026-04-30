@@ -7,7 +7,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -27,6 +29,7 @@ export default function CommunityScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [pendingInvites, setPendingInvites] = useState([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -37,7 +40,7 @@ export default function CommunityScreen({ navigation }) {
   const fetchAllData = async () => {
     try {
       setLoading(true);
-      await Promise.all([fetchMyClubs(), fetchDiscoverClubs()]);
+      await Promise.all([fetchMyClubs(), fetchDiscoverClubs(), fetchPendingInvites()]);
     } catch (error) {
       console.error('Error fetching club data:', error);
     } finally {
@@ -121,6 +124,94 @@ export default function CommunityScreen({ navigation }) {
     } catch (error) {
       console.error('Error fetching my clubs:', error);
       setMyClubs([]);
+    }
+  };
+
+  const fetchPendingInvites = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: inviteData, error } = await supabase
+        .from('club_invites')
+        .select('id, club_id, invited_by, status, created_at')
+        .eq('invited_user_id', user.id)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+      if (!inviteData || inviteData.length === 0) {
+        setPendingInvites([]);
+        return;
+      }
+
+      // Get the club details for every invite
+      const invitesWithDetails = [];
+      for (const invite of inviteData) {
+        const { data: clubData } = await supabase
+          .from('clubs')
+          .select('id, name, description')
+          .eq('id', invite.club_id)
+          .maybeSingle();
+
+        const { data: inviterProfile } = await supabase
+          .from('profiles')
+          .select('display_name, username')
+          .eq('id', invite.invited_by)
+          .maybeSingle();
+
+        invitesWithDetails.push({
+          id: invite.id,
+          clubId: invite.club_id,
+          clubName: clubData?.name || 'Unknown Club',
+          clubDescription: clubData?.description || '',
+          invitedBy: inviterProfile?.display_name || inviterProfile?.username || 'Someone',
+          createdAt: invite.created_at,
+        });
+      }
+
+      setPendingInvites(invitesWithDetails);
+    } catch (error) {
+      console.error('Error fetching invites:', error);
+      setPendingInvites([]);
+    }
+  };
+
+  const handleAcceptInvite = async (invite) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Add to the club_memberships
+      const { error: memberErr } = await supabase
+        .from('club_memberships')
+        .insert({ club_id: invite.clubId, user_id: user.id, role: 'member' });
+
+      if (memberErr && memberErr.code !== '23505') throw memberErr;
+
+      // Make sure to update invite status
+      await supabase
+        .from('club_invites')
+        .update({ status: 'accepted' })
+        .eq('id', invite.id);
+
+      Alert.alert('Joined!', `You have joined ${invite.clubName}! 🎉`);
+      fetchAllData();
+    } catch (err) {
+      console.error('Accept invite error:', err);
+      Alert.alert('Error', 'Failed to accept invite.');
+    }
+  };
+
+  const handleDeclineInvite = async (invite) => {
+    try {
+      await supabase
+        .from('club_invites')
+        .update({ status: 'declined' })
+        .eq('id', invite.id);
+
+      setPendingInvites(prev => prev.filter(i => i.id !== invite.id));
+    } catch (err) {
+      console.error('Decline invite error:', err);
     }
   };
 
@@ -286,7 +377,7 @@ export default function CommunityScreen({ navigation }) {
             color={selectedTab === 'myClubs' ? colors.buttonPrimary : colors.secondary}
           />
           <Text style={[styles.tabText, selectedTab === 'myClubs' && styles.tabTextActive]}>
-            My Clubs
+            My Clubs{pendingInvites.length > 0 ? ` (${pendingInvites.length} invite${pendingInvites.length !== 1 ? 's' : ''})` : ''}
           </Text>
         </TouchableOpacity>
 
@@ -315,6 +406,44 @@ export default function CommunityScreen({ navigation }) {
       >
         {selectedTab === 'myClubs' ? (
           <View style={styles.content}>
+            {/* Pending Invites */}
+            {pendingInvites.length > 0 && (
+              <View style={styles.inviteSection}>
+                <Text style={styles.inviteSectionTitle}>
+                  Pending Invites ({pendingInvites.length})
+                </Text>
+                {pendingInvites.map(invite => (
+                  <View key={invite.id} style={styles.inviteCard}>
+                    <View style={styles.inviteCardInfo}>
+                      <Text style={styles.inviteCardClub}>{invite.clubName}</Text>
+                      <Text style={styles.inviteCardFrom}>
+                        Invited by {invite.invitedBy}
+                      </Text>
+                      {invite.clubDescription ? (
+                        <Text style={styles.inviteCardDesc} numberOfLines={1}>
+                          {invite.clubDescription}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.inviteCardActions}>
+                      <TouchableOpacity
+                        style={styles.inviteAcceptBtn}
+                        onPress={() => handleAcceptInvite(invite)}
+                      >
+                        <Text style={styles.inviteAcceptBtnText}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.inviteDeclineBtn}
+                        onPress={() => handleDeclineInvite(invite)}
+                      >
+                        <Text style={styles.inviteDeclineBtnText}>Decline</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
             {loading ? (
               <Text style={styles.loadingText}>Loading your clubs...</Text>
             ) : myClubs.length > 0 ? (
@@ -332,6 +461,7 @@ export default function CommunityScreen({ navigation }) {
         ) : (
           <View style={styles.content}>
             <Text style={styles.sectionTitle}>Popular Clubs</Text>
+            <Text style={styles.sectionSubtitle}>Sorted by most members</Text>
             {loading ? (
               <Text style={styles.loadingText}>Loading clubs...</Text>
             ) : discoverClubs.length > 0 ? (
@@ -359,7 +489,7 @@ export default function CommunityScreen({ navigation }) {
         onClose={() => setShowCreateModal(false)}
         onSuccess={fetchAllData}
       />
-      </View>
+    </View>
     </ImageBackground>
   );
 }
@@ -561,15 +691,19 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Create Book Club</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
-
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create Book Club</Text>
+              <TouchableOpacity onPress={onClose}>
+                <Ionicons name="close" size={24} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+ 
           <ScrollView style={styles.modalContent}>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Club Name *</Text>
@@ -581,7 +715,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                 maxLength={100}
               />
             </View>
-
+ 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Description</Text>
               <TextInput
@@ -594,7 +728,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                 maxLength={500}
               />
             </View>
-
+ 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Privacy</Text>
               <View style={styles.privacyOptions}>
@@ -609,7 +743,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                   />
                   <Text style={styles.privacyOptionText}>Public - Anyone can join</Text>
                 </TouchableOpacity>
-
+ 
                 <TouchableOpacity
                   style={[styles.privacyOption, !isPublic && styles.privacyOptionActive]}
                   onPress={() => setIsPublic(false)}
@@ -623,11 +757,11 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                 </TouchableOpacity>
               </View>
             </View>
-
+ 
             {/* Book selection */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Starting Book (optional)</Text>
-
+ 
               {selectedBook ? (
                 <View style={styles.selectedBookRow}>
                   {selectedBook.cover ? (
@@ -656,7 +790,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                   </Text>
                 </TouchableOpacity>
               )}
-
+ 
               {showBookSearch && !selectedBook && (
                 <View style={styles.inlineBookSearch}>
                   <View style={styles.bookSearchRow}>
@@ -680,7 +814,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                       }
                     </TouchableOpacity>
                   </View>
-
+ 
                   {bookResults.map(book => (
                     <TouchableOpacity
                       key={book.googleId}
@@ -706,7 +840,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
               )}
             </View>
           </ScrollView>
-
+ 
           <View style={styles.modalActions}>
             <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -721,8 +855,9 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
               </Text>
             </TouchableOpacity>
           </View>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -803,6 +938,20 @@ const styles = StyleSheet.create({
   createButtonModal: { flex: 1, paddingVertical: spacing.md, borderRadius: 8, backgroundColor: colors.buttonPrimary, alignItems: 'center' },
   createButtonModalText: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.semibold, color: colors.buttonText },
   buttonDisabled: { backgroundColor: colors.border, opacity: 0.6 },
+
+  // Invitationstyles
+  inviteSection: { marginBottom: spacing.lg },
+  inviteSectionTitle: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.bold, color: colors.primary, marginBottom: spacing.sm },
+  inviteCard: { backgroundColor: '#FFF8E1', borderRadius: 12, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1.5, borderColor: '#FFD700' },
+  inviteCardInfo: { marginBottom: spacing.sm },
+  inviteCardClub: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.bold, color: colors.primary },
+  inviteCardFrom: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 2 },
+  inviteCardDesc: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 2 },
+  inviteCardActions: { flexDirection: 'row', gap: spacing.sm },
+  inviteAcceptBtn: { flex: 1, backgroundColor: colors.buttonPrimary, paddingVertical: spacing.sm, borderRadius: 8, alignItems: 'center' },
+  inviteAcceptBtnText: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.buttonText },
+  inviteDeclineBtn: { flex: 1, backgroundColor: colors.background, paddingVertical: spacing.sm, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+  inviteDeclineBtnText: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.secondary },
 
   // Book search styles
   selectedBookRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 8, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
