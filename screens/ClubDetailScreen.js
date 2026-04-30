@@ -41,6 +41,7 @@ export default function ClubDetailScreen({ route, navigation }) {
   const [showBookPickerModal, setShowBookPickerModal] = useState(false);
   const [showPollModal, setShowPollModal] = useState(false);
   const [activePoll, setActivePoll] = useState(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
 
   useFocusEffect(
@@ -224,6 +225,7 @@ export default function ClubDetailScreen({ route, navigation }) {
         .select('id, book_id')
         .eq('poll_id', pollData.id);
 
+      // Get the book details for each option
       const optionsWithBooks = [];
       for (const opt of optionsData || []) {
         const { data: bookData } = await supabase
@@ -335,7 +337,7 @@ export default function ClubDetailScreen({ route, navigation }) {
                 return;
               }
 
-              navigation.navigate('CommunityMain');
+              navigation.navigate('Community');
               setTimeout(() => {
                 Alert.alert('Deleted', `"${clubDetails?.name}" has been deleted.`);
               }, 300);
@@ -368,7 +370,7 @@ export default function ClubDetailScreen({ route, navigation }) {
                 .eq('user_id', currentUserId);
               if (error) throw error;
               Alert.alert('Left Club', `You have left "${clubDetails?.name}".`, [
-                { text: 'OK', onPress: () => navigation.navigate('CommunityMain') }
+                { text: 'OK', onPress: () => navigation.navigate('Community') }
               ]);
             } catch (error) {
               console.error('Error leaving club:', error);
@@ -404,6 +406,7 @@ export default function ClubDetailScreen({ route, navigation }) {
         { text: 'Edit Club', onPress: () => setShowEditModal(true) },
         { text: 'Set Current Book', onPress: () => setShowBookPickerModal(true) },
         { text: 'Book of the Month Poll', onPress: () => setShowPollModal(true) },
+        { text: 'Invite Members', onPress: () => setShowInviteModal(true) },
         { text: 'Delete Club', style: 'destructive', onPress: handleDeleteClub },
         { text: 'Cancel', style: 'cancel' },
       ]);
@@ -515,7 +518,7 @@ export default function ClubDetailScreen({ route, navigation }) {
                 onVote={async (optionId) => {
                   try {
                     if (activePoll.userVote) {
-                      // Change vote, delete the old one and then insert the new one
+                      // change their vote, so delete the old one, then add the new one
                       await supabase
                         .from('poll_votes')
                         .delete()
@@ -533,12 +536,13 @@ export default function ClubDetailScreen({ route, navigation }) {
                 }}
                 onClose={async () => {
                   try {
+                    // Close the poll and set the winning book as the club's current book
                     const winner = activePoll.options.reduce((a, b) =>
                       (activePoll.voteCounts[a.id] || 0) >= (activePoll.voteCounts[b.id] || 0) ? a : b
                     );
                     await supabase.from('polls').update({ is_active: false }).eq('id', activePoll.id);
                     await supabase.from('clubs').update({ book_id: winner.bookId }).eq('id', club.id);
-                    Alert.alert('Poll Closed!', `"${winner.title}" has been set as the club's next book! 🎉`);
+                    Alert.alert('Poll Closed!', `"${winner.title}" has been set as the club's next book!`);
                     loadAll();
                   } catch (err) {
                     console.error('Close poll error:', err);
@@ -637,6 +641,14 @@ export default function ClubDetailScreen({ route, navigation }) {
           setShowPollModal(false);
           fetchActivePoll();
         }}
+      />
+
+      {/* Invite Members Modal */}
+      <InviteMembersModal
+        visible={showInviteModal}
+        clubId={club.id}
+        clubName={displayName}
+        onClose={() => setShowInviteModal(false)}
       />
     </View>
   );
@@ -1365,7 +1377,7 @@ function PollCard({ poll, currentUserId, isOwner, onVote, onClose }) {
     <View style={styles.pollCard}>
       <View style={styles.pollHeader}>
         <View style={styles.pollTitleRow}>
-          <Ionicons name="ballot" size={18} color={colors.buttonPrimary} />
+          <Ionicons name="list" size={18} color={colors.buttonPrimary} />
           <Text style={styles.pollTitle}>{poll.question}</Text>
         </View>
         {isOwner && (
@@ -1522,7 +1534,7 @@ function CreatePollModal({ visible, clubId, onClose, onSuccess }) {
         if (optErr) throw optErr;
       }
 
-      Alert.alert('Poll Created!', 'Members can now vote on the next book! 🗳️');
+      Alert.alert('Poll Created!', 'Members can now vote on the next book! ');
       onSuccess();
     } catch (err) {
       console.error('Create poll error:', err);
@@ -1638,6 +1650,200 @@ function CreatePollModal({ visible, clubId, onClose, onSuccess }) {
                 {loading ? 'Creating...' : `Create Poll (${bookOptions.length} books)`}
               </Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Invite Members Modal
+function InviteMembersModal({ visible, clubId, clubName, onClose }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [sentInvites, setSentInvites] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setSearchQuery('');
+      setSearchResults([]);
+      setSentInvites({});
+    }
+  }, [visible]);
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    try {
+      setSearching(true);
+      setSearchResults([]);
+
+      // Search profiles by username, display_name, or email
+      const { data: profileResults, error } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .or(`username.ilike.%${searchQuery.trim()}%,display_name.ilike.%${searchQuery.trim()}%`)
+        .limit(10);
+
+      if (error) throw error;
+
+      // Search by email in auth.users
+      const { data: emailResults } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .limit(0); // placeholder
+
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const { data: memberData } = await supabase
+        .from('club_memberships')
+        .select('user_id')
+        .eq('club_id', clubId);
+
+      const memberIds = new Set((memberData || []).map(m => m.user_id));
+
+      // Filter out the current users and members
+      const filtered = (profileResults || []).filter(
+        p => p.id !== user?.id && !memberIds.has(p.id)
+      );
+
+      setSearchResults(filtered);
+    } catch (err) {
+      console.error('Search error:', err);
+      Alert.alert('Error', 'Failed to search users.');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleInvite = async (profile) => {
+    try {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Check if they're already invited
+      const { data: existing } = await supabase
+        .from('club_invites')
+        .select('id, status')
+        .eq('club_id', clubId)
+        .eq('invited_user_id', profile.id)
+        .maybeSingle();
+
+      if (existing) {
+        Alert.alert(
+          'Already Invited',
+          existing.status === 'pending'
+            ? `${profile.display_name || profile.username} already has a pending invite.`
+            : `${profile.display_name || profile.username} has already responded to an invite.`
+        );
+        return;
+      }
+
+      const { error } = await supabase
+        .from('club_invites')
+        .insert({
+          club_id: clubId,
+          invited_by: user.id,
+          invited_user_id: profile.id,
+          status: 'pending',
+        });
+
+      if (error) throw error;
+
+      setSentInvites(prev => ({ ...prev, [profile.id]: true }));
+      Alert.alert('Invite Sent!', `${profile.display_name || profile.username} has been invited to ${clubName}!`);
+    } catch (err) {
+      console.error('Invite error:', err);
+      Alert.alert('Error', 'Failed to send invite. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}> Invite Members</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.modalContent}>
+            {/* Search bar */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Search by username or name</Text>
+              <View style={styles.bookSearchRow}>
+                <TextInput
+                  style={styles.bookSearchInput}
+                  placeholder="e.g. nnflande or Nicole..."
+                  placeholderTextColor={colors.secondary}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  onSubmitEditing={handleSearch}
+                  returnKeyType="search"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={[styles.bookSearchBtn, !searchQuery.trim() && styles.buttonDisabled]}
+                  onPress={handleSearch}
+                  disabled={!searchQuery.trim() || searching}
+                >
+                  {searching
+                    ? <ActivityIndicator size="small" color={colors.buttonText} />
+                    : <Ionicons name="search" size={16} color={colors.buttonText} />
+                  }
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Search results */}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {searchResults.length > 0 ? (
+                searchResults.map(profile => {
+                  const invited = sentInvites[profile.id];
+                  const displayName = profile.display_name || profile.username || 'Unknown';
+                  const avatarUrl = profile.avatar_url ||
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=4A4A4A&color=fff`;
+
+                  return (
+                    <View key={profile.id} style={styles.inviteResultCard}>
+                      <Image source={{ uri: avatarUrl }} style={styles.inviteAvatar} />
+                      <View style={styles.inviteInfo}>
+                        <Text style={styles.inviteName}>{displayName}</Text>
+                        {profile.username && profile.display_name && (
+                          <Text style={styles.inviteUsername}>@{profile.username}</Text>
+                        )}
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.inviteBtn, invited && styles.inviteBtnSent]}
+                        onPress={() => !invited && handleInvite(profile)}
+                        disabled={invited || loading}
+                      >
+                        <Ionicons
+                          name={invited ? 'checkmark' : 'person-add-outline'}
+                          size={16}
+                          color={invited ? colors.buttonText : colors.buttonPrimary}
+                        />
+                        <Text style={[styles.inviteBtnText, invited && styles.inviteBtnTextSent]}>
+                          {invited ? 'Invited' : 'Invite'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })
+              ) : searchQuery.length > 0 && !searching ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="person-outline" size={48} color={colors.border} />
+                  <Text style={styles.emptyTitle}>No users found</Text>
+                  <Text style={styles.emptyText}>Try a different username or name</Text>
+                </View>
+              ) : null}
+            </ScrollView>
           </View>
         </View>
       </View>
@@ -1790,6 +1996,17 @@ const styles = StyleSheet.create({
   addBookButtonText: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.medium, color: colors.buttonPrimary },
   inlineBookSearch: { marginTop: spacing.sm, gap: spacing.sm },
   bookPickerEmptyText: { fontSize: typography.fontSizes.base, color: colors.secondary, textAlign: 'center', lineHeight: typography.fontSizes.base * typography.lineHeights.relaxed },
+
+  // Invite styles
+  inviteResultCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 10, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: spacing.md },
+  inviteAvatar: { width: 44, height: 44, borderRadius: 22 },
+  inviteInfo: { flex: 1 },
+  inviteName: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.semibold, color: colors.primary },
+  inviteUsername: { fontSize: typography.fontSizes.xs, color: colors.secondary, marginTop: 2 },
+  inviteBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: 8, borderWidth: 1, borderColor: colors.buttonPrimary },
+  inviteBtnSent: { backgroundColor: colors.buttonPrimary, borderColor: colors.buttonPrimary },
+  inviteBtnText: { fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold, color: colors.buttonPrimary },
+  inviteBtnTextSent: { color: colors.buttonText },
 
   // Poll Card
   pollCard: { backgroundColor: colors.surface, borderRadius: 12, padding: spacing.md, marginBottom: spacing.lg, borderWidth: 1.5, borderColor: colors.buttonPrimary },
