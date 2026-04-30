@@ -15,7 +15,9 @@ import {
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -1201,16 +1203,20 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>New Discussion</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.modalContent}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>New Discussion</Text>
+              <TouchableOpacity onPress={onClose}>
+                <Ionicons name="close" size={24} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+ 
+            <ScrollView style={styles.modalContent}>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Discussion Title *</Text>
               <TextInput
@@ -1221,7 +1227,7 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
                 maxLength={200}
               />
             </View>
-
+ 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Chapter (optional)</Text>
               <TextInput
@@ -1236,7 +1242,7 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
                 Leave blank for a general discussion not tied to a chapter.
               </Text>
             </View>
-
+ 
             {/* Tag selector */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Tag (optional)</Text>
@@ -1262,11 +1268,11 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
                 })}
               </View>
             </View>
-
+ 
             {/* Book selection */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Book (optional)</Text>
-
+ 
               {selectedBook ? (
                 // Show selected book with option to change/remove
                 <View style={styles.selectedBookRow}>
@@ -1297,7 +1303,7 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
                   </Text>
                 </TouchableOpacity>
               )}
-
+ 
               {/* Inline book search */}
               {showBookSearch && !selectedBook && (
                 <View style={styles.inlineBookSearch}>
@@ -1322,7 +1328,7 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
                       }
                     </TouchableOpacity>
                   </View>
-
+ 
                   {bookResults.map(book => (
                     <TouchableOpacity
                       key={book.googleId}
@@ -1348,7 +1354,7 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
               )}
             </View>
           </ScrollView>
-
+ 
           <View style={styles.modalActions}>
             <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -1363,8 +1369,9 @@ function NewThreadModal({ visible, clubId, currentChapter, onClose, onSuccess })
               </Text>
             </TouchableOpacity>
           </View>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

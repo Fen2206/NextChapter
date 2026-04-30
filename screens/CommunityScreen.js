@@ -7,7 +7,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -689,15 +691,19 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Create Book Club</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
-
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create Book Club</Text>
+              <TouchableOpacity onPress={onClose}>
+                <Ionicons name="close" size={24} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+ 
           <ScrollView style={styles.modalContent}>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Club Name *</Text>
@@ -709,7 +715,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                 maxLength={100}
               />
             </View>
-
+ 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Description</Text>
               <TextInput
@@ -722,7 +728,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                 maxLength={500}
               />
             </View>
-
+ 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Privacy</Text>
               <View style={styles.privacyOptions}>
@@ -737,7 +743,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                   />
                   <Text style={styles.privacyOptionText}>Public - Anyone can join</Text>
                 </TouchableOpacity>
-
+ 
                 <TouchableOpacity
                   style={[styles.privacyOption, !isPublic && styles.privacyOptionActive]}
                   onPress={() => setIsPublic(false)}
@@ -751,11 +757,11 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                 </TouchableOpacity>
               </View>
             </View>
-
+ 
             {/* Book selection */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Starting Book (optional)</Text>
-
+ 
               {selectedBook ? (
                 <View style={styles.selectedBookRow}>
                   {selectedBook.cover ? (
@@ -784,7 +790,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                   </Text>
                 </TouchableOpacity>
               )}
-
+ 
               {showBookSearch && !selectedBook && (
                 <View style={styles.inlineBookSearch}>
                   <View style={styles.bookSearchRow}>
@@ -808,7 +814,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
                       }
                     </TouchableOpacity>
                   </View>
-
+ 
                   {bookResults.map(book => (
                     <TouchableOpacity
                       key={book.googleId}
@@ -834,7 +840,7 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
               )}
             </View>
           </ScrollView>
-
+ 
           <View style={styles.modalActions}>
             <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -849,8 +855,9 @@ function CreateClubModal({ visible, onClose, onSuccess }) {
               </Text>
             </TouchableOpacity>
           </View>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
